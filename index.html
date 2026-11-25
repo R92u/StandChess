@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#101d20" />
+    <title>StandChess — Шахматная арена</title>
+    <link rel="icon" href="assets/mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="assets/fonts/fonts.css" />
+    <link rel="stylesheet" href="style.css" />
+    <script defer src="vendor/chess.min.js"></script>
+    <script defer src="engine.js"></script>
+    <script defer src="effects.js"></script>
+    <script defer src="online.js"></script>
+    <script defer src="ui.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="rail" aria-label="Меню StandChess">
+        <a class="brand" href="#arena" aria-label="StandChess, к доске"
+          ><img src="assets/mark.svg" alt="" /><span>Stand<b>Chess</b></span></a
+        >
+        <nav class="rail-nav" aria-label="Игра">
+          <a class="rail-item current" href="#arena" aria-current="page"
+            ><i data-icon="swords"></i><span>Играть</span></a
+          >
+          <button class="rail-item" id="new-game" title="Новая партия">
+            <i data-icon="plus"></i><span>Новая партия</span>
+          </button>
+          <button class="rail-item" id="online-open" title="Онлайн">
+            <i data-icon="players"></i><span>Онлайн</span>
+          </button>
+          <div class="rail-divider"></div>
+          <button class="rail-item" id="debug-open" title="Отладка">
+            <i data-icon="bug"></i><span>Отладка</span>
+          </button>
+        </nav>
+        <div class="rail-bottom">
+          <button
+            class="rail-item"
+            id="sound-toggle"
+            aria-pressed="true"
+            aria-label="Выключить звук"
+          >
+            <i data-icon="sound"></i><span>Звук вкл.</span
+            ><b class="switch" aria-hidden="true"></b>
+          </button>
+        </div>
+      </aside>
+      <main id="arena">
+        <div id="debug-banner" class="debug-banner" hidden>
+          <i data-icon="bug"></i
+          ><span id="scenario-hint">Тестовая копия партии</span
+          ><button id="exit-debug">Выйти из отладки</button>
+        </div>
+        <div class="arena-layout">
+          <section class="play-column" aria-labelledby="arena-title">
+            <header class="arena-heading">
+              <div>
+                <div class="series">JOJO’S BIZARRE ADVENTURE</div>
+                <h1 id="arena-title">Шахматная арена</h1>
+              </div>
+              <div class="turn-badge" id="turn" role="status"></div>
+            </header>
+            <div class="board-shell">
+              <div class="player-row" id="player-top"></div>
+              <div class="board-rim">
+                <div id="board" role="group" aria-label="Игровое поле"></div>
+              </div>
+              <div class="player-row" id="player-bottom"></div>
+            </div>
+            <div class="match-footer">
+              <span
+                ><i data-icon="players"></i
+                ><span id="match-type">Локальная партия</span></span
+              >
+              <div>
+                <span id="move-number"></span><span class="divider"></span
+                ><button
+                  class="icon-button"
+                  id="flip"
+                  title="Повернуть доску"
+                  aria-label="Повернуть доску"
+                >
+                  <i data-icon="flip"></i>
+                </button>
+              </div>
+            </div>
+          </section>
+          <aside class="sidebar" aria-label="Стенды и журнал партии">
+            <section class="stand-panel glass" aria-labelledby="stands-title">
+              <header class="panel-heading">
+                <span class="panel-emblem"><i data-icon="spark"></i></span>
+                <div>
+                  <h2 id="stands-title">Стенды</h2>
+                  <p>+10 маны за свой ход · 100 за активацию</p>
+                </div>
+              </header>
+              <article class="stand-card crimson" id="card-w">
+                <div class="stand-scene">
+                  <div class="art-scene" aria-hidden="true">
+                    <img src="assets/art/king-crimson.webp" alt="" />
+                  </div>
+                  <div class="stand-body">
+                    <div class="side-label">
+                      <span class="side-stone white"></span>БЕЛЫЕ
+                    </div>
+                    <h3 lang="en">King Crimson</h3>
+                    <div class="power-name">
+                      <i data-icon="rewind"></i>Стирание времени
+                    </div>
+                    <p>
+                      Стирает последний ход чёрных и возвращает фигуры на место.
+                    </p>
+                  </div>
+                </div>
+                <div class="stand-actions">
+                  <button class="power-button" id="power-w">Стереть ход</button>
+                  <div
+                    class="mana"
+                    id="mana-w"
+                    role="meter"
+                    aria-label="Мана белых"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    aria-valuenow="0"
+                  >
+                    <span class="mana-caption" aria-hidden="true"
+                      >Мана <b>0 / 100</b></span
+                    >
+                    <span class="mana-track" aria-hidden="true"
+                      ><span class="mana-fill"></span
+                    ></span>
+                  </div>
+                </div>
+              </article>
+              <article class="stand-card world" id="card-b">
+                <div class="stand-scene">
+                  <div class="art-scene" aria-hidden="true">
+                    <img src="assets/art/the-world.webp" alt="" />
+                  </div>
+                  <div class="stand-body">
+                    <div class="side-label">
+                      <span class="side-stone black"></span>ЧЁРНЫЕ
+                    </div>
+                    <h3 lang="en">The World</h3>
+                    <div class="power-name">
+                      <i data-icon="clock"></i>Остановка времени
+                    </div>
+                    <p>Даёт чёрным два хода подряд. Шах завершает остановку.</p>
+                  </div>
+                </div>
+                <div class="stand-actions">
+                  <button class="power-button" id="power-b">
+                    Остановить время
+                  </button>
+                  <div
+                    class="mana"
+                    id="mana-b"
+                    role="meter"
+                    aria-label="Мана чёрных"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    aria-valuenow="0"
+                  >
+                    <span class="mana-caption" aria-hidden="true"
+                      >Мана <b>0 / 100</b></span
+                    >
+                    <span class="mana-track" aria-hidden="true"
+                      ><span class="mana-fill"></span
+                    ></span>
+                  </div>
+                </div>
+              </article>
+            </section>
+            <section class="journal glass" aria-labelledby="journal-heading">
+              <div class="journal-heading">
+                <h2 id="journal-heading">
+                  <i data-icon="history"></i>Журнал партии
+                </h2>
+                <span id="event-count"></span>
+              </div>
+              <div
+                id="journal-list"
+                class="journal-list"
+                role="log"
+                aria-label="История партии"
+              ></div>
+            </section>
+          </aside>
+        </div>
+      </main>
+    </div>
+    <svg
+      width="0"
+      height="0"
+      class="optical-defs"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <defs>
+        <filter
+          id="world-optics"
+          x="0"
+          y="0"
+          filterUnits="userSpaceOnUse"
+          primitiveUnits="userSpaceOnUse"
+          color-interpolation-filters="sRGB"
+        >
+          <feFlood flood-color="#808080" result="flat" />
+          <feImage id="wave-map" preserveAspectRatio="none" result="field" />
+          <feMerge result="vector">
+            <feMergeNode in="flat" />
+            <feMergeNode in="field" />
+          </feMerge>
+          <feDisplacementMap
+            id="wave-bend"
+            in="SourceGraphic"
+            in2="vector"
+            xChannelSelector="R"
+            yChannelSelector="G"
+            scale="0"
+          />
+          <feColorMatrix type="saturate" values=".64" />
+          <feComponentTransfer>
+            <feFuncR type="table" />
+            <feFuncG type="table" />
+            <feFuncB type="table" />
+          </feComponentTransfer>
+        </filter>
+      </defs>
+    </svg>
+    <div id="world-lens" aria-hidden="true" hidden></div>
+    <div id="ability-fx" aria-hidden="true" hidden>
+      <video
+        id="skip-film"
+        src="assets/effects/time-skip.mp4"
+        playsinline
+        preload="auto"
+        disablepictureinpicture
+      ></video>
+      <video
+        id="stop-film"
+        src="assets/effects/time-stop.mp4"
+        playsinline
+        preload="auto"
+        disablepictureinpicture
+      ></video>
+      <video
+        id="resume-film"
+        src="assets/effects/time-resume.mp4"
+        playsinline
+        preload="auto"
+        disablepictureinpicture
+      ></video>
+    </div>
+    <dialog id="online" aria-labelledby="online-title">
+      <div class="dialog-heading">
+        <h2 id="online-title"><i data-icon="players"></i>Игра онлайн</h2>
+        <button class="icon-button close" aria-label="Закрыть">
+          <i data-icon="x"></i>
+        </button>
+      </div>
+      <p id="online-info" role="status">
+        Создайте комнату и отправьте другу ссылку. Вы играете за белых, друг —
+        за чёрных.
+      </p>
+      <div id="invite-tools" hidden>
+        <label for="invite-url">Ссылка на комнату</label>
+        <div class="invite-row">
+          <input id="invite-url" readonly spellcheck="false" /><button
+            class="tool-button"
+            id="invite-copy"
+          >
+            Скопировать
+          </button>
+        </div>
+      </div>
+      <p id="online-feedback" role="status" hidden></p>
+      <p id="online-public" hidden>
+        Для игры с другом через интернет
+        <a href="https://standchess-r92u.onrender.com/?online=1"
+          >откройте StandChess на Render</a
+        >.
+      </p>
+      <div class="dialog-row">
+        <button class="primary" id="room-enter">Создать комнату</button>
+        <button class="primary close" id="room-board" hidden>К доске</button>
+        <button class="tool-button" id="room-leave" hidden>
+          К локальной игре
+        </button>
+      </div>
+    </dialog>
+    <dialog id="debug" aria-labelledby="debug-title">
+      <div class="dialog-heading">
+        <h2 id="debug-title"><i data-icon="bug"></i>Режим отладки</h2>
+        <button class="icon-button close" aria-label="Закрыть">
+          <i data-icon="x"></i>
+        </button>
+      </div>
+      <p>
+        Вы играете на копии доски. После выхода из отладки основная партия
+        продолжится с прежнего хода.
+      </p>
+      <label for="scenario">Тестовая позиция</label>
+      <div class="select-row">
+        <select id="scenario"></select
+        ><button id="load-scenario" class="primary">Загрузить</button>
+      </div>
+      <p id="scenario-preview" class="field-hint"></p>
+      <div class="dialog-row">
+        <button class="tool-button" id="recharge">
+          <i data-icon="zap"></i>Заполнить ману обоим</button
+        ><button class="tool-button" id="debug-undo">
+          <i data-icon="undo"></i>Шаг назад
+        </button>
+      </div>
+      <h3 class="field-label">Проверка звука</h3>
+      <div class="dialog-row">
+        <button class="sample crimson" data-sample="w">
+          <i data-icon="play"></i>King Crimson</button
+        ><button class="sample world" data-sample="b">
+          <i data-icon="play"></i>The World
+        </button>
+      </div>
+      <h3 class="field-label">Предпросмотр анимации</h3>
+      <div class="dialog-row">
+        <button class="sample crimson" data-preview="w">
+          <i data-icon="rewind"></i>King Crimson</button
+        ><button class="sample world" data-preview="b">
+          <i data-icon="clock"></i>The World
+        </button>
+      </div>
+      <button class="sample world resume-preview" data-preview="resume">
+        <i data-icon="restart"></i>Возвращение времени
+      </button>
+      <div id="debug-feedback" role="status"></div>
+      <button class="primary wide close">К тестовой доске</button>
+    </dialog>
+    <dialog id="restart" aria-labelledby="restart-title">
+      <div class="dialog-heading">
+        <h2 id="restart-title">Начать новую партию?</h2>
+        <button class="icon-button close" aria-label="Закрыть">
+          <i data-icon="x"></i>
+        </button>
+      </div>
+      <p id="restart-note">
+        Текущая партия и её журнал будут сброшены. Оба игрока начнут с 0 маны.
+      </p>
+      <div class="dialog-row">
+        <button class="tool-button close">Продолжить игру</button
+        ><button id="restart-confirm" class="primary">Начать заново</button>
+      </div>
+    </dialog>
+    <dialog id="promotion" aria-labelledby="promotion-title">
+      <div class="dialog-heading">
+        <h2 id="promotion-title">Превращение пешки</h2>
+        <button class="icon-button close" aria-label="Отменить">
+          <i data-icon="x"></i>
+        </button>
+      </div>
+      <p>Выберите новую фигуру.</p>
+      <div id="promotion-options"></div>
+    </dialog>
+    <div id="toast" role="status"></div>
+  </body>
+</html>

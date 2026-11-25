@@ -1,0 +1,35 @@
+Stand Chess · Локальная фан-игра
+
+Графика персонажей
+King Crimson — кадр из материалов аниме Golden Wind (JoJo's Bizarre Encyclopedia)
+https://jojowiki.com/File:King_Crimson_Infobox_Anime.png
+The World — цветная иллюстрация из манги Stardust Crusaders (JoJo's Bizarre Encyclopedia)
+https://jojowiki.com/File:The_World_Infobox_Manga.png
+Персонажи JoJo's Bizarre Adventure — Hirohiko Araki / Shueisha.
+
+Звуковые фрагменты
+King Crimson Activation — запись с Myinstants
+https://www.myinstants.com/en/instant/king-crimson-activation-42176/
+ZA WARUDO, TIME STOP ! — запись с Myinstants
+https://www.myinstants.com/en/instant/za-warudo-time-stop/
+
+Эффекты активации
+King Crimson's Time-Skip Blackscreen — nekomaster1000. Исходный видеослой и звук, наложение Lighten по описанию автора.
+https://www.youtube.com/watch?v=0WoBJmO_8pc
+Dio Za Warudo (the World) — Empire064. Для арены воссозданы цветовые переходы, преломление и световые волны эпизода с 0:09. Звук синхронизирован с этим отрывком.
+https://www.youtube.com/watch?v=NRBqnKjJ8AE&t=9s
+
+Шахматные фигуры
+CBurnett, SVG chess pieces. Набор файлов из проекта Lichess. Для StandChess изменены заливки и палитра фигур. CC BY-SA 3.0.
+https://commons.wikimedia.org/wiki/Category:SVG_chess_pieces
+https://github.com/lichess-org/lila/tree/master/public/piece/cburnett
+https://creativecommons.org/licenses/by-sa/3.0/
+
+Правила классических шахмат
+chess.js 0.10.3 — Jeff Hlywa и участники проекта. BSD-2-Clause.
+https://github.com/jhlywa/chess.js/tree/v0.10.3
+Текст лицензии в vendor/chess-LICENSE.txt.
+
+Шрифты
+Inter — Rasmus Andersson. Barlow Condensed — Jeremy Tribby.
+SIL Open Font License 1.1. Тексты лицензий в assets/fonts.
