@@ -241,6 +241,7 @@
     lens.style.opacity = String(clamp((5.9 - t) / 0.65) * 0.9);
   }
   function stop() {
+    window.PieceEffects?.stop();
     generation++;
     cancelTick();
     if (current) {

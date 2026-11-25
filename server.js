@@ -73,10 +73,15 @@ async function roomApi(req, res, url, id, op) {
   }
   if (!room) return fail(res, 404, 'Комната закрыта. Создайте новую.');
   if (op === 'join' && !room.b && token !== room.w) {
-    room.game = new StandGame(undefined, 0, {
-      ...room.game.state.stands,
-      b: stand || 'world',
-    });
+    room.game = new StandGame(
+      undefined,
+      0,
+      {
+        ...room.game.state.stands,
+        b: stand || 'world',
+      },
+      room.game.state.tower,
+    );
     room.b = token;
     room.version++;
   }
@@ -127,6 +132,7 @@ const publicFiles = new Set([
   'online.js',
   'engine.js',
   'effects.js',
+  'piece-effects.js',
   'CREDITS.txt',
 ]);
 const types = {

@@ -1,9 +1,18 @@
 (() => {
   'use strict';
-  const { StandGame, scenarios, scenario, MAX_MANA, STANDS, DEFAULT_STANDS } =
-    window.StandChess;
+  const {
+    StandGame,
+    scenarios,
+    scenario,
+    MAX_MANA,
+    STANDS,
+    DEFAULT_STANDS,
+    inTower,
+  } = window.StandChess;
   const $ = (id) => document.getElementById(id);
   const icons = {
+    tower:
+      '<path d="m12 2-2 4h4zM10.5 6 6 22m7.5-16L18 22M4 22h5m6 0h5M6 7h12l2 2h-4M6 7 4 9h4m-3 2h14l2 2h-5m-11-2-2 2h5m1.4-.8 5.9 4.8m-1.9-4.8L8.2 17m-.5 2.4 8.8-2.1M9 17l8 4"/>',
     gravity:
       '<path d="M6 3v10l-3-3m3 3 3-3m8-7v10l-3-3m3 3 3-3M3 17h18M5 21h14"/>',
     gem: '<path d="m2 9 5-6h10l5 6-10 12zM2 9h20M7 3l5 18 5-18"/>',
@@ -94,6 +103,7 @@
     targeting = null;
   let gesture = null,
     suppressDragClick = false;
+  let showTowerZone = true;
   const boardElement = $('board');
   const online = new window.StandRoom(applyRoomState, roomConnectionChanged);
   const roomParam = () => new URL(location.href).searchParams.get('room');
@@ -185,6 +195,23 @@
       inCheck = game.chess.in_check(),
       playing = !game.result() && mayPlay();
     const abilityTargets = targeting ? game.targets(targeting) : [];
+    const tower = game.state.tower;
+    const occupants = game.towerOccupants();
+    const lastInZone = occupants.length === 1 ? occupants[0] : null;
+    $('tower-info').hidden = !tower;
+    if (tower) {
+      const count = occupants.length;
+      $('tower-info').lastElementChild.textContent =
+        'Башня ' +
+        tower +
+        ' · ' +
+        (lastInZone
+          ? 'Последняя фигура на ' + lastInZone
+          : 'В зоне ' +
+            count +
+            ' ' +
+            plural(count, 'фигура', 'фигуры', 'фигур'));
+    }
     for (const rank of ranks)
       for (const file of files) {
         const square = file + rank,
@@ -194,6 +221,38 @@
         cell.type = 'button';
         cell.dataset.square = square;
         cell.className = 'sq';
+        if (tower && inTower(tower, square)) {
+          if (showTowerZone) {
+            const field = node('span', 'tower-field', '');
+            const col = files.indexOf(file),
+              row = ranks.indexOf(rank);
+            for (const [edge, f, r] of [
+              ['left', col - 1, row],
+              ['right', col + 1, row],
+              ['top', col, row - 1],
+              ['bottom', col, row + 1],
+            ]) {
+              if (
+                !files[f] ||
+                !ranks[r] ||
+                !inTower(tower, files[f] + ranks[r])
+              )
+                field.classList.add('edge-' + edge);
+            }
+            cell.append(field);
+          }
+          if (square === tower) {
+            const marker = node(
+              'span',
+              'tower-marker' + (piece ? ' shared' : ''),
+              '',
+            );
+            marker.innerHTML = icon('tower');
+            cell.append(marker);
+          }
+          if (square === lastInZone && showTowerZone)
+            cell.classList.add('tower-last');
+        }
         const locked = piece && game.state.locked[piece.color] === square;
         if (locked) cell.classList.add('gravity-lock');
         const abilityTarget = abilityTargets.includes(square);
@@ -217,6 +276,8 @@
             : ', пусто') +
           (target ? ', доступный ход' : '') +
           (locked ? ', под действием Three Freeze' : '') +
+          (square === tower ? ', башня Super Fly' : '') +
+          (square === lastInZone ? ', последняя фигура в зоне башни' : '') +
           (abilityTarget ? ', цель стенда' : '');
         cell.setAttribute('aria-label', label);
         cell.setAttribute('aria-pressed', String(square === selected));
@@ -254,6 +315,7 @@
       }
     const hadFocus = board.contains(document.activeElement);
     board.replaceChildren(fragment);
+    window.PieceEffects.sync();
     if (hadFocus)
       board.querySelector('[tabindex="0"]')?.focus({ preventScroll: true });
   }
@@ -385,6 +447,10 @@
     $('turn').classList.toggle('finished', Boolean(result));
     document.body.dataset.timeStopped = String(Boolean(s.freeze) && !result);
     $('move-number').textContent = 'Ход ' + s.fen.split(' ')[5];
+    $('stand-cost').textContent =
+      s.stands.w === 'superfly' && s.stands.b === 'superfly'
+        ? 'Одна общая башня на всю партию'
+        : '+10 маны за свой ход · 100 за активацию';
     for (const side of ['w', 'b']) {
       const id = s.stands[side],
         stand = STANDS[id],
@@ -399,8 +465,21 @@
           '<i>' + icon(stand.icon) + '</i>' + stand.power;
         card.querySelector('.stand-body p').textContent = stand.description;
       }
+      const meter = $('mana-' + side);
+      const passive = id === 'superfly';
+      meter.hidden = passive;
       const blocked = game.abilityBlock(side),
         btn = $('power-' + side);
+      if (passive) {
+        const action = showTowerZone ? 'Скрыть зону' : 'Показать зону';
+        btn.innerHTML = '<i>' + icon('tower') + '</i>' + action;
+        btn.disabled = false;
+        btn.title = 'Башня ' + s.tower + ' · действует с начала партии';
+        btn.setAttribute('aria-label', 'Super Fly · ' + action);
+        btn.setAttribute('aria-pressed', String(showTowerZone));
+        continue;
+      }
+      btn.removeAttribute('aria-pressed');
       btn.disabled =
         Boolean(blocked) || !mayPlay() || (online.id && online.side !== side);
       btn.title = blocked || 'Потратить 100 маны';
@@ -416,7 +495,6 @@
       btn.replaceChildren(node('i', '', ''), document.createTextNode(action));
       btn.firstChild.innerHTML = icon(blocked ? 'clock' : 'zap');
       btn.setAttribute('aria-label', stand.name + ' · ' + (blocked || action));
-      const meter = $('mana-' + side);
       const value = s.mana[side];
       meter.setAttribute('aria-valuenow', String(value));
       meter.style.setProperty('--mana-fill', value / MAX_MANA);
@@ -666,7 +744,7 @@
     $('promotion').close();
     makeMove(from, to, piece);
   });
-  function playStand(id, target) {
+  function playStand(id, target, expected) {
     window.StandEffects.stop();
     stopAudio();
     if (id === 'world' || id === 'crimson' || id === 'resume') {
@@ -677,24 +755,13 @@
       return;
     }
     playClip(id);
-    const cell = boardElement.querySelector('[data-square="' + target + '"]');
-    if (!cell) return;
-    const rect = cell.getBoundingClientRect();
-    const burst = node('div', 'stand-burst ' + id, '');
-    burst.setAttribute('aria-hidden', 'true');
-    Object.assign(burst.style, {
-      left: rect.left + 'px',
-      top: rect.top + 'px',
-      width: rect.width + 'px',
-      height: rect.height + 'px',
-    });
-    for (let n = 0; n < 8; n++) {
-      const ray = document.createElement('i');
-      ray.style.setProperty('--angle', 45 * n + 'deg');
-      burst.append(ray);
-    }
-    document.body.append(burst);
-    setTimeout(() => burst.remove(), 950);
+    const piece = target && game.chess.get(target);
+    if (
+      piece &&
+      (!expected ||
+        (piece.type === expected.type && piece.color === expected.color))
+    )
+      window.PieceEffects.play(id, target);
   }
   function useStand(color, target) {
     if (online.id) {
@@ -712,6 +779,11 @@
   }
   for (const color of ['w', 'b'])
     $('power-' + color).addEventListener('click', () => {
+      if (game.state.stands[color] === 'superfly') {
+        showTowerZone = !showTowerZone;
+        render();
+        return;
+      }
       if (game.abilityBlock(color) || !mayPlay()) return;
       if (['diamond', 'echoes'].includes(game.state.stands[color])) {
         const next = targeting === color ? null : color;
@@ -815,6 +887,7 @@
     game = StandGame.restore(data.state);
     if (first) {
       flipped = data.side === 'b';
+      showTowerZone = true;
       history.replaceState(null, '', roomURL(online.id));
       window.StandEffects.stop();
     }
@@ -822,12 +895,24 @@
     render();
     if (!first) {
       let effect = null,
-        target = null;
+        target = null,
+        expected = null;
       let frozen = previous.freeze;
       for (const event of data.state.events.slice(previous.events.length)) {
         if (event.kind === 'ability') {
           effect = game.state.stands[event.color];
           target = event.target;
+          expected = event.piece
+            ? {
+                type: event.piece,
+                color:
+                  effect === 'echoes'
+                    ? event.color === 'w'
+                      ? 'b'
+                      : 'w'
+                    : event.color,
+              }
+            : null;
           frozen = effect === 'world' ? 2 : 0;
         } else if (event.kind === 'move') {
           moveSound(event.captured);
@@ -835,7 +920,7 @@
         }
       }
       if (frozen && !data.state.freeze) effect = 'resume';
-      if (effect) playStand(effect, target);
+      if (effect) playStand(effect, target, expected);
     }
     if (online.ready && (first || data.version === 2) && $('online').open)
       $('online').close();
@@ -892,6 +977,7 @@
   };
   $('restart-confirm').onclick = () => {
     track();
+    showTowerZone = true;
     game = new StandGame(undefined, 0, {
       w: $('pick-w').value,
       b: $('pick-b').value,
@@ -927,6 +1013,7 @@
   $('load-scenario').onclick = () => {
     const id = $('scenario').value;
     track();
+    showTowerZone = true;
     game = scenario(id);
     $('scenario-hint').textContent = scenarios[id].hint;
     $('debug').close();
@@ -953,9 +1040,15 @@
       const color = el.dataset.preview;
       $('debug').close();
       stopAudio();
-      if (color === 'echoes' || color === 'diamond')
-        playStand(color, color === 'echoes' ? 'g8' : 'e2');
-      else window.StandEffects.play(color, sound);
+      if (color === 'echoes' || color === 'diamond') {
+        const preferred = color === 'echoes' ? 'g8' : 'e2';
+        const square = game.chess.get(preferred)
+          ? preferred
+          : [...boardElement.children].find((cell) =>
+              game.chess.get(cell.dataset.square),
+            )?.dataset.square;
+        playStand(color, square);
+      } else window.StandEffects.play(color, sound);
     };
   $('exit-debug').onclick = () => {
     window.StandEffects.stop();
@@ -974,6 +1067,7 @@
       if (e.newState === 'open') {
         cancelGesture();
         window.StandEffects.stop();
+        stopAudio();
       }
     });
   for (const dlg of document.querySelectorAll('dialog'))

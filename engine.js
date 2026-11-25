@@ -9,6 +9,16 @@
   const MOVE_MANA = 10;
   const DEFAULT_STANDS = { w: 'crimson', b: 'world' };
   const STANDS = {
+    superfly: {
+      name: 'Super Fly',
+      user: 'Тоёхиро',
+      art: 'superfly',
+      power: 'Ловушка башни',
+      action: 'Показать зону',
+      icon: 'tower',
+      description:
+        'В радиусе трёх клеток от башни должна остаться хотя бы одна фигура любого цвета. Через саму башню можно ходить.',
+    },
     crimson: {
       name: 'King Crimson',
       user: 'Дьяволо',
@@ -59,6 +69,28 @@
       Math.abs(a[1] - b[1]),
     );
   const copy = (value) => JSON.parse(JSON.stringify(value));
+  const inTower = (tower, sq) => Boolean(tower && distance(tower, sq) <= 3);
+  function chooseTower(board) {
+    const occupied = squares.filter((sq) => board.get(sq));
+    const candidates = squares.filter(
+      (sq) => !board.get(sq) && occupied.some((piece) => inTower(sq, piece)),
+    );
+    if (!candidates.length) throw new Error('Нет свободной клетки для башни');
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+  // Count all pieces after the complete move. Castling moves two pieces;
+  // an en passant capture removes a pawn on a different square.
+  function leavesTowerOccupied(tower, count, m) {
+    const inside = (sq) => Number(inTower(tower, sq));
+    let after = count - inside(m.from) + inside(m.to);
+    if (m.captured)
+      after -= inside(m.flags.includes('e') ? m.to[0] + m.from[1] : m.to);
+    if (m.flags.includes('k'))
+      after += inside('f' + m.from[1]) - inside('h' + m.from[1]);
+    if (m.flags.includes('q'))
+      after += inside('d' + m.from[1]) - inside('a' + m.from[1]);
+    return after > 0;
+  }
 
   function passTurn(fen, next) {
     const fields = fen.split(' ');
@@ -72,7 +104,12 @@
   }
 
   class StandGame {
-    constructor(fen = START, initialMana = 0, stands = DEFAULT_STANDS) {
+    constructor(
+      fen = START,
+      initialMana = 0,
+      stands = DEFAULT_STANDS,
+      tower = null,
+    ) {
       this.chess = new Chess(fen);
       const selected = { ...DEFAULT_STANDS, ...stands };
       if (!Object.values(selected).every((id) => Object.hasOwn(STANDS, id)))
@@ -80,6 +117,9 @@
       this.state = {
         fen,
         stands: selected,
+        tower: Object.values(selected).includes('superfly')
+          ? tower || chooseTower(this.chess)
+          : null,
         locked: { w: null, b: null },
         homes: {},
         fallen: [],
@@ -115,6 +155,7 @@
       }
       game.state = copy(data);
       game.state.stands ??= { ...DEFAULT_STANDS };
+      game.state.tower ??= null;
       game.state.locked ??= { w: null, b: null };
       game.state.homes ??= {};
       game.state.fallen ??= [];
@@ -158,18 +199,33 @@
       return this.chess.turn();
     }
     moves(square) {
-      const moves = this.chess.moves(
+      return this.#legalMoves(this.chess, square);
+    }
+    towerOccupants(board = this.chess) {
+      const tower = this.state.tower;
+      return tower
+        ? squares.filter((sq) => inTower(tower, sq) && board.get(sq))
+        : [];
+    }
+    #legalMoves(board, square) {
+      let moves = board.moves(
         square ? { square, verbose: true } : { verbose: true },
       );
-      const lock = this.state.locked[this.turn()];
-      return lock
-        ? moves.filter(
-            (m) =>
-              m.from !== lock &&
-              !(m.flags.includes('k') && lock === 'h' + m.from[1]) &&
-              !(m.flags.includes('q') && lock === 'a' + m.from[1]),
-          )
-        : moves;
+      const lock = this.state.locked[board.turn()];
+      if (lock)
+        moves = moves.filter(
+          (m) =>
+            m.from !== lock &&
+            !(m.flags.includes('k') && lock === 'h' + m.from[1]) &&
+            !(m.flags.includes('q') && lock === 'a' + m.from[1]),
+        );
+      const tower = this.state.tower;
+      if (tower) {
+        const count = this.towerOccupants(board).length;
+        if (count <= 2)
+          moves = moves.filter((m) => leavesTowerOccupied(tower, count, m));
+      }
+      return moves;
     }
     targets(color) {
       const stand = this.state.stands[color];
@@ -199,10 +255,7 @@
     record() {
       this.state.fen = this.chess.fen();
       const fields = this.state.fen.split(' ').slice(0, 4);
-      if (
-        fields[3] !== '-' &&
-        !this.chess.moves({ verbose: true }).some((m) => m.flags.includes('e'))
-      )
+      if (fields[3] !== '-' && !this.moves().some((m) => m.flags.includes('e')))
         fields[3] = '-';
       const { mana, freeze, lastMove } = this.state;
       const rewind =
@@ -216,6 +269,7 @@
             lastMove.manaEarned
           : '';
       let key = [fields.join(' '), mana.w, mana.b, freeze, rewind].join('|');
+      if (this.state.tower) key += '|tower=' + this.state.tower;
       const { stands, locked, homes, fallen } = this.state;
       if (stands.w !== DEFAULT_STANDS.w || stands.b !== DEFAULT_STANDS.b) {
         key +=
@@ -240,9 +294,11 @@
     }
     result() {
       const side = this.turn();
-      const noMoves = this.state.locked[side]
-        ? !this.moves().length
-        : this.chess.in_checkmate() || this.chess.in_stalemate();
+      const noMoves =
+        this.state.locked[side] ||
+        (this.state.tower && this.towerOccupants().length <= 2)
+          ? !this.moves().length
+          : this.chess.in_checkmate() || this.chess.in_stalemate();
       if (
         noMoves &&
         !(
@@ -263,6 +319,8 @@
       return '';
     }
     abilityBlock(color) {
+      if (this.state.stands[color] === 'superfly')
+        return 'Башня действует постоянно';
       if (this.result()) return 'Партия завершена';
       if (this.state.freeze) return 'Время остановлено';
       if (this.state.mana[color] < MAX_MANA) return 'Нужно 100 маны';
@@ -327,6 +385,7 @@
           text: STANDS[stand].name,
           detail: 'Фигура прижата на ' + target,
           target,
+          piece: this.chess.get(target).type,
         });
       } else {
         const before = this.chess.fen(),
@@ -370,7 +429,7 @@
     move(from, to, promotion) {
       if (this.result()) return null;
       if (
-        this.state.locked[this.turn()] &&
+        (this.state.locked[this.turn()] || this.state.tower) &&
         !this.moves(from).some(
           (m) => m.to === to && (!m.promotion || m.promotion === promotion),
         )
@@ -445,14 +504,19 @@
         // The opponent always gets a reply to check. Terminal positions end the effect.
         if (
           this.chess.in_check() ||
-          this.chess.in_stalemate() ||
+          (!this.#legalMoves(this.chess).length &&
+            !(
+              s.stands[foe] === 'diamond' &&
+              s.mana[foe] === MAX_MANA &&
+              this.targets(foe).length
+            )) ||
           (this.chess.insufficient_material() && !s.fallen.length) ||
           +this.chess.fen().split(' ')[4] >= 100
         )
           s.freeze = 0;
         if (s.freeze) {
           const extra = new Chess(passTurn(this.chess.fen(), m.color));
-          if (extra.moves().length) this.chess.load(extra.fen());
+          if (this.#legalMoves(extra).length) this.chess.load(extra.fen());
           else s.freeze = 0;
         }
       }
@@ -475,6 +539,13 @@
     }
   }
   const scenarios = {
+    superfly: {
+      label: 'Super Fly · последняя фигура',
+      stands: { w: 'superfly' },
+      tower: 'a1',
+      fen: '7k/8/8/8/3R4/8/8/7K w - - 0 1',
+      hint: 'Башня на a1. Ладья d4 одна в зоне: она может уйти на d3, но не на e4. После входа другой фигуры ограничение снимется.',
+    },
     echoes: {
       label: 'Echoes ACT 3 · прижать коня',
       mana: MAX_MANA,
@@ -559,7 +630,7 @@
   };
   function scenario(id) {
     const spec = scenarios[id];
-    const game = new StandGame(spec.fen, spec.mana, spec.stands);
+    const game = new StandGame(spec.fen, spec.mana, spec.stands, spec.tower);
     for (const [from, to] of spec.moves || []) {
       if (!game.move(from, to)) throw new Error('Некорректная позиция ' + id);
     }
@@ -572,6 +643,7 @@
     MAX_MANA,
     STANDS,
     DEFAULT_STANDS,
+    inTower,
   };
   root.StandChess = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -11,6 +11,7 @@
     <script defer src="vendor/chess.min.js"></script>
     <script defer src="engine.js"></script>
     <script defer src="effects.js"></script>
+    <script defer src="piece-effects.js"></script>
     <script defer src="online.js"></script>
     <script defer src="ui.js"></script>
   </head>
@@ -66,9 +67,15 @@
               <div class="player-row" id="player-top"></div>
               <p id="target-hint" role="status" hidden></p>
               <div class="board-rim">
-                <div id="board" role="group" aria-label="Игровое поле"></div>
+                <div class="board-stage">
+                  <div id="board" role="group" aria-label="Игровое поле"></div>
+                  <canvas id="piece-fx" hidden aria-hidden="true"></canvas>
+                </div>
               </div>
               <div class="player-row" id="player-bottom"></div>
+              <div id="tower-info" hidden>
+                <i data-icon="tower"></i><span></span>
+              </div>
             </div>
             <div class="match-footer">
               <span
@@ -94,7 +101,7 @@
                 <span class="panel-emblem"><i data-icon="spark"></i></span>
                 <div>
                   <h2 id="stands-title">Стенды</h2>
-                  <p>+10 маны за свой ход · 100 за активацию</p>
+                  <p id="stand-cost">+10 маны за свой ход · 100 за активацию</p>
                 </div>
                 <button id="choose-stands" class="tool-button">
                   Выбрать стенды
