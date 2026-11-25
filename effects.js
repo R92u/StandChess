@@ -242,6 +242,7 @@
   }
   function stop() {
     window.PieceEffects?.stop();
+    window.BoardStandFX?.stop();
     generation++;
     cancelTick();
     if (current) {

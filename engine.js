@@ -9,6 +9,58 @@
   const MOVE_MANA = 10;
   const DEFAULT_STANDS = { w: 'crimson', b: 'world' };
   const STANDS = {
+    enigma: {
+      name: 'Enigma',
+      user: 'Тэруносукэ',
+      art: 'enigma',
+      icon: 'flag',
+      power: 'Бумажная ловушка',
+      action: 'Раскрыть ловушку',
+      description:
+        'На следующем ходу соперника отступившая фигура попадает под выстрел. Король не может отступить в ловушку.',
+    },
+    gold: {
+      name: 'Gold Experience',
+      user: 'Джорно',
+      art: 'gold',
+      icon: 'spark',
+      cost: 150,
+      power: 'Дар жизни',
+      action: 'Преобразить пешку',
+      description:
+        'За 150 маны превращает свою пешку в коня, слона или ладью. Заменяет ход.',
+    },
+    kiss: {
+      name: 'Kiss',
+      user: 'Эрмес',
+      art: 'kiss',
+      icon: 'gem',
+      power: 'Двойная наклейка',
+      action: 'Наклеить стикер',
+      description:
+        'Копирует свою пешку, коня, слона или ладью на соседнюю клетку на два своих хода. Взятие одной уничтожает обе. Наклейку можно снять досрочно.',
+    },
+    heaven: {
+      name: 'Heaven’s Door',
+      user: 'Рохан',
+      art: 'heaven',
+      icon: 'history',
+      cost: 150,
+      power: 'Переписать ход',
+      action: 'Открыть книгу',
+      description:
+        'Меняет способ движения своей или чужой фигуры в трёх клетках от своего короля до конца партии. Ферзь и король защищены. Заменяет ход.',
+    },
+    house: {
+      name: 'Burning Down the House',
+      user: 'Эмпорио',
+      art: 'house',
+      icon: 'board',
+      power: 'Призрачная комната',
+      action: 'Открыть комнату',
+      description:
+        'Открывает клетки i3, i4 и i5 для своих фигур с начала партии. Король остаётся на основной доске.',
+    },
     superfly: {
       name: 'Super Fly',
       user: 'Тоёхиро',
@@ -292,6 +344,21 @@
           .length >= 3
       );
     }
+    #rewindDefends(side) {
+      const s = this.state,
+        last = s.lastMove;
+      if (
+        s.stands[side] !== 'crimson' ||
+        s.freeze ||
+        s.mana[side] < MAX_MANA ||
+        last?.color !== other(side) ||
+        new Chess(last.before).in_check()
+      )
+        return false;
+      const trial = StandGame.restore(this.snapshot());
+      trial.#applyAbility(side);
+      return !trial.chess.in_check() && !!trial.moves().length;
+    }
     result() {
       const side = this.turn();
       const noMoves =
@@ -301,6 +368,7 @@
           : this.chess.in_checkmate() || this.chess.in_stalemate();
       if (
         noMoves &&
+        !this.#rewindDefends(side) &&
         !(
           this.state.mana[side] === MAX_MANA &&
           this.state.stands[side] === 'diamond' &&
@@ -539,6 +607,37 @@
     }
   }
   const scenarios = {
+    enigma: {
+      label: 'Enigma · отступление',
+      stands: { w: 'enigma' },
+      mana: 100,
+      fen: '4k3/8/8/4r3/8/8/4P3/4K3 w - - 0 1',
+      hint: 'Активируйте ловушку, сыграйте e2–e3, затем отступите чёрной ладьёй с e5 на e6.',
+    },
+    gold: {
+      label: 'Gold Experience · дар жизни',
+      stands: { w: 'gold' },
+      mana: 150,
+      hint: 'Выберите белую пешку и её новую фигуру.',
+    },
+    kiss: {
+      label: 'Kiss · связь копии',
+      stands: { w: 'kiss' },
+      mana: 100,
+      hint: 'Скопируйте пешку на соседнюю свободную клетку. Попробуйте снять наклейку во время хода чёрных.',
+    },
+    heaven: {
+      label: 'Heaven’s Door · переписать фигуру',
+      stands: { w: 'heaven' },
+      mana: 150,
+      hint: 'Выберите слона рядом с белым королём и задайте ему ход коня.',
+    },
+    house: {
+      label: 'Burning Down the House · комнаты',
+      stands: { w: 'house' },
+      fen: '4k3/8/8/8/7R/8/8/4K3 w - - 0 1',
+      hint: 'Белая ладья может перейти с h4 в комнату i4. Попробуйте дать шах из комнаты.',
+    },
     superfly: {
       label: 'Super Fly · последняя фигура',
       stands: { w: 'superfly' },
@@ -630,14 +729,22 @@
   };
   function scenario(id) {
     const spec = scenarios[id];
-    const game = new StandGame(spec.fen, spec.mana, spec.stands, spec.tower);
+    const game = new Match(spec.fen, spec.mana, spec.stands, spec.tower);
     for (const [from, to] of spec.moves || []) {
       if (!game.move(from, to)) throw new Error('Некорректная позиция ' + id);
     }
     return game;
   }
+  const Match = (root.createStandVariant || require('./variants'))({
+    Base: StandGame,
+    other,
+    distance,
+    copy,
+    inTower,
+    STANDS,
+  });
   const api = {
-    StandGame,
+    StandGame: Match,
     scenarios,
     scenario,
     MAX_MANA,

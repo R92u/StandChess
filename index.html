@@ -9,9 +9,11 @@
     <link rel="stylesheet" href="assets/fonts/fonts.css" />
     <link rel="stylesheet" href="style.css" />
     <script defer src="vendor/chess.min.js"></script>
+    <script defer src="variants.js"></script>
     <script defer src="engine.js"></script>
     <script defer src="effects.js"></script>
     <script defer src="piece-effects.js"></script>
+    <script defer src="board-fx.js"></script>
     <script defer src="online.js"></script>
     <script defer src="ui.js"></script>
   </head>
@@ -70,6 +72,7 @@
                 <div class="board-stage">
                   <div id="board" role="group" aria-label="Игровое поле"></div>
                   <canvas id="piece-fx" hidden aria-hidden="true"></canvas>
+                  <div id="stand-fx" hidden aria-hidden="true"></div>
                 </div>
               </div>
               <div class="player-row" id="player-bottom"></div>
@@ -356,6 +359,7 @@
       <button class="sample world resume-preview" data-preview="resume">
         <i data-icon="restart"></i>Возвращение времени
       </button>
+      <div class="dialog-row" id="extra-previews"></div>
       <div id="debug-feedback" role="status"></div>
       <button class="primary wide close">К тестовой доске</button>
     </dialog>
@@ -381,6 +385,15 @@
         <button class="tool-button close">Продолжить игру</button
         ><button id="restart-confirm" class="primary">Начать заново</button>
       </div>
+    </dialog>
+    <dialog id="stand-choice" aria-labelledby="stand-choice-title">
+      <div class="dialog-heading">
+        <h2 id="stand-choice-title">Выбор хода</h2>
+        <button class="icon-button close" aria-label="Отменить">
+          <i data-icon="x"></i>
+        </button>
+      </div>
+      <div id="stand-options" class="dialog-row"></div>
     </dialog>
     <dialog id="promotion" aria-labelledby="promotion-title">
       <div class="dialog-heading">

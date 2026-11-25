@@ -62,6 +62,11 @@
     echoes: new Audio('assets/audio/echoes.mp3'),
     diamond: new Audio('assets/audio/diamond.mp3'),
   };
+  const extraStands = ['enigma', 'gold', 'kiss', 'heaven', 'house', 'superfly'];
+  for (const id of extraStands)
+    clip[id] = new Audio('assets/audio/' + id + '.mp3');
+  for (const id of ['enigma-shot', 'diavolo', 'world-call'])
+    clip[id] = new Audio('assets/audio/' + id + '.mp3');
   for (const audio of Object.values(clip)) {
     audio.preload = 'auto';
     audio.volume = 0.62;
@@ -101,6 +106,7 @@
     synth;
   let focusSquare = 'e2',
     targeting = null;
+  let targetOrigin = null;
   let gesture = null,
     suppressDragClick = false;
   let showTowerZone = true;
@@ -170,6 +176,7 @@
   }
   function resetSelection() {
     targeting = null;
+    targetOrigin = null;
     releaseGesture();
     selected = null;
     candidates = [];
@@ -188,13 +195,23 @@
     render();
   }
   function renderBoard() {
-    const files = Array.from(flipped ? 'hgfedcba' : 'abcdefgh');
+    const hasRoom = Object.values(game.state.stands).includes('house');
+    const files = [...(hasRoom ? 'abcdefghi' : 'abcdefgh')];
+    if (flipped) files.reverse();
     const ranks = Array.from(flipped ? '12345678' : '87654321');
     const board = $('board'),
       fragment = document.createDocumentFragment(),
       inCheck = game.chess.in_check(),
       playing = !game.result() && mayPlay();
-    const abilityTargets = targeting ? game.targets(targeting) : [];
+    board.classList.toggle('house-board', hasRoom);
+    const abilityTargets = targeting
+      ? targetOrigin
+        ? game
+            .choices(targeting)
+            .filter((o) => o.target === targetOrigin)
+            .map((o) => o.choice)
+        : game.targets(targeting)
+      : [];
     const tower = game.state.tower;
     const occupants = game.towerOccupants();
     const lastInZone = occupants.length === 1 ? occupants[0] : null;
@@ -217,10 +234,18 @@
         const square = file + rank,
           piece = game.chess.get(square),
           cell = document.createElement('button');
+        if (file === 'i' && !'345'.includes(rank)) {
+          fragment.append(node('span', 'room-void', ''));
+          continue;
+        }
         const target = candidates.some((m) => m.to === square);
         cell.type = 'button';
         cell.dataset.square = square;
         cell.className = 'sq';
+        if (file === 'i') cell.classList.add('room-square');
+        if (square === targetOrigin) cell.classList.add('selected');
+        if (candidates.some((m) => m.to === square && m.shot))
+          cell.classList.add('enigma-risk');
         if (tower && inTower(tower, square)) {
           if (showTowerZone) {
             const field = node('span', 'tower-field', '');
@@ -281,7 +306,9 @@
           (abilityTarget ? ', цель стенда' : '');
         cell.setAttribute('aria-label', label);
         cell.setAttribute('aria-pressed', String(square === selected));
-        if (file === files[0]) cell.append(node('span', 'coord rank', rank));
+        if (file === (flipped ? 'h' : 'a'))
+          cell.append(node('span', 'coord rank', rank));
+        if (file === 'i') cell.append(node('span', 'coord rank', square));
         if (rank === ranks[7]) cell.append(node('span', 'coord file', file));
         if (piece) {
           if (playing && !targeting && !locked && piece.color === game.turn())
@@ -292,6 +319,35 @@
           img.alt = '';
           img.draggable = false;
           cell.append(img);
+          const link = game.state.position?.links.find(
+            (l) => l.clone === square || l.original === square,
+          );
+          if (link) {
+            const badge = node(
+              'span',
+              'unit-badge kiss',
+              link.clone === square ? 'Ⅱ' : 'Ⅰ',
+            );
+            badge.title =
+              (link.clone === square ? 'Копия' : 'Оригинал') +
+              ' · осталось ходов: ' +
+              link.left;
+            cell.append(badge);
+            cell.setAttribute('aria-label', label + ', ' + badge.title);
+          }
+          if (piece.walk) {
+            const badge = node(
+              'span',
+              'walk-badge',
+              { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' }[piece.walk],
+            );
+            badge.title = 'Ходит как ' + pieces[piece.walk];
+            cell.append(badge);
+            cell.setAttribute(
+              'aria-label',
+              cell.getAttribute('aria-label') + ', ' + badge.title,
+            );
+          }
         } else if (
           abilityTarget &&
           game.state.stands[targeting] === 'diamond'
@@ -316,6 +372,7 @@
     const hadFocus = board.contains(document.activeElement);
     board.replaceChildren(fragment);
     window.PieceEffects.sync();
+    window.BoardStandFX.sync();
     if (hadFocus)
       board.querySelector('[tabindex="0"]')?.focus({ preventScroll: true });
   }
@@ -329,7 +386,11 @@
     const log = $('journal-list'),
       events = game.state.events;
     const count = events.filter(
-      (e) => (e.kind === 'move' || e.stand === 'diamond') && !e.erased,
+      (e) =>
+        (e.kind === 'move' ||
+          (e.kind === 'ability' &&
+            ['diamond', 'gold', 'heaven', 'kiss'].includes(e.stand))) &&
+        !e.erased,
     ).length;
     $('event-count').textContent =
       count + ' ' + plural(count, 'ход', 'хода', 'ходов');
@@ -355,7 +416,11 @@
           node(
             'span',
             'detail',
-            e.from + ' → ' + e.to + (e.erased ? ' · стёрт' : ''),
+            e.from +
+              ' → ' +
+              e.to +
+              (e.shot ? ' · Enigma уничтожила фигуру' : '') +
+              (e.erased ? ' · стёрт' : ''),
           ),
         );
       } else {
@@ -447,10 +512,11 @@
     $('turn').classList.toggle('finished', Boolean(result));
     document.body.dataset.timeStopped = String(Boolean(s.freeze) && !result);
     $('move-number').textContent = 'Ход ' + s.fen.split(' ')[5];
-    $('stand-cost').textContent =
-      s.stands.w === 'superfly' && s.stands.b === 'superfly'
-        ? 'Одна общая башня на всю партию'
-        : '+10 маны за свой ход · 100 за активацию';
+    $('stand-cost').textContent = ['w', 'b'].every((c) =>
+      ['house', 'superfly'].includes(s.stands[c]),
+    )
+      ? 'Пассивные стенды действуют с начала партии'
+      : '+10 маны за свой ход';
     for (const side of ['w', 'b']) {
       const id = s.stands[side],
         stand = STANDS[id],
@@ -466,11 +532,27 @@
         card.querySelector('.stand-body p').textContent = stand.description;
       }
       const meter = $('mana-' + side);
-      const passive = id === 'superfly';
+      const passive = id === 'superfly' || id === 'house';
+      const max = stand.cost || MAX_MANA;
+      const mergeButton = $('merge-' + side);
+      mergeButton.hidden = !s.position?.links.some((l) => l.owner === side);
+      mergeButton.disabled =
+        !!result ||
+        (online.id &&
+          (online.side !== side || online.busy || !online.connected)) ||
+        !game.canMerge?.(side);
       meter.hidden = passive;
       const blocked = game.abilityBlock(side),
         btn = $('power-' + side);
       if (passive) {
+        if (id === 'house') {
+          btn.innerHTML = '<i>' + icon('board') + '</i>Показать комнату';
+          btn.disabled = false;
+          btn.title = 'Призрачные клетки i3–i5';
+          btn.removeAttribute('aria-pressed');
+          btn.setAttribute('aria-label', 'Показать призрачную комнату');
+          continue;
+        }
         const action = showTowerZone ? 'Скрыть зону' : 'Показать зону';
         btn.innerHTML = '<i>' + icon('tower') + '</i>' + action;
         btn.disabled = false;
@@ -482,12 +564,12 @@
       btn.removeAttribute('aria-pressed');
       btn.disabled =
         Boolean(blocked) || !mayPlay() || (online.id && online.side !== side);
-      btn.title = blocked || 'Потратить 100 маны';
+      btn.title = blocked || 'Потратить ' + max + ' маны';
       let action = targeting === side ? 'Отмена выбора' : stand.action;
       if (blocked) {
         if (result) action = 'Партия завершена';
         else if (s.freeze) action = 'Время остановлено';
-        else if (s.mana[side] < MAX_MANA) action = 'Нужно 100 маны';
+        else if (s.mana[side] < max) action = 'Нужно ' + max + ' маны';
         else if (color !== side)
           action = side === 'w' ? 'В ход белых' : 'В ход чёрных';
         else action = blocked;
@@ -497,8 +579,9 @@
       btn.setAttribute('aria-label', stand.name + ' · ' + (blocked || action));
       const value = s.mana[side];
       meter.setAttribute('aria-valuenow', String(value));
-      meter.style.setProperty('--mana-fill', value / MAX_MANA);
-      meter.querySelector('b').textContent = value + ' / ' + MAX_MANA;
+      meter.setAttribute('aria-valuemax', String(max));
+      meter.style.setProperty('--mana-fill', value / max);
+      meter.querySelector('b').textContent = value + ' / ' + max;
     }
     $('match-type').textContent = online.id
       ? 'Онлайн · вы играете за ' + (online.side === 'w' ? 'белых' : 'чёрных')
@@ -517,12 +600,21 @@
     $('online-open').classList.toggle('active', Boolean(online.id));
     $('online-open').setAttribute('aria-pressed', String(Boolean(online.id)));
     if ($('online').open) renderRoomDialog();
-    $('target-hint').hidden = !targeting;
-    if (targeting)
+    const trapped = s.position?.snared[color];
+    $('target-hint').hidden = !targeting && !trapped;
+    if (trapped)
       $('target-hint').textContent =
-        s.stands[targeting] === 'echoes'
-          ? 'Выберите фигуру соперника, которую прижмёт Echoes.'
-          : 'Выберите подсвеченную стартовую клетку для восстановления.';
+        'Enigma · отступление уничтожит фигуру. Опасные ходы отмечены красным.';
+    if (targeting)
+      $('target-hint').textContent = {
+        echoes: 'Выберите фигуру соперника, которую прижмёт Echoes.',
+        diamond: 'Выберите стартовую клетку для восстановления.',
+        gold: 'Выберите свою пешку.',
+        kiss: targetOrigin
+          ? 'Выберите соседнюю клетку для копии.'
+          : 'Выберите свою фигуру для копирования.',
+        heaven: 'Выберите фигуру в радиусе трёх клеток от своего короля.',
+      }[s.stands[targeting]];
   }
   function makeMove(from, to, promotion) {
     if (!mayPlay()) return;
@@ -539,6 +631,9 @@
     }
     moveSound(move.captured);
     changed();
+    if (move.shot)
+      playStand('shot', to, { type: move.piece, color: move.color });
+    else if (to[0] === 'i') playStand('house', to);
     if (wasFrozen && (!game.state.freeze || game.result()))
       window.StandEffects.play('resume', sound);
   }
@@ -546,7 +641,45 @@
     focusSquare = square;
     if (game.result() || !mayPlay()) return;
     if (targeting) {
-      if (game.targets(targeting).includes(square)) useStand(targeting, square);
+      const id = game.state.stands[targeting];
+      if (targetOrigin) {
+        if (
+          game
+            .choices(targeting)
+            .some((o) => o.target === targetOrigin && o.choice === square)
+        )
+          useStand(targeting, targetOrigin, square);
+        return;
+      }
+      if (!game.targets(targeting).includes(square)) return;
+      if (id === 'kiss') {
+        targetOrigin = square;
+        render();
+        return;
+      }
+      if (id === 'heaven' || id === 'gold') {
+        const dialog = $('stand-choice'),
+          opts = $('stand-options');
+        opts.replaceChildren();
+        $('stand-choice-title').textContent =
+          id === 'gold'
+            ? 'В кого превратить пешку?'
+            : 'Как будет ходить фигура?';
+        for (const o of game
+          .choices(targeting)
+          .filter((o) => o.target === square)) {
+          const btn = node('button', 'tool-button', pieces[o.choice]);
+          btn.dataset.choice = o.choice;
+          btn.onclick = () => {
+            dialog.close();
+            useStand(targeting, square, o.choice);
+          };
+          opts.append(btn);
+        }
+        dialog.showModal();
+        return;
+      }
+      useStand(targeting, square);
       return;
     }
     const legal = candidates.filter((m) => m.to === square);
@@ -727,11 +860,13 @@
     const cells = Array.from($('board').children),
       index = cells.indexOf(e.target);
     if (index < 0) return;
+    const cols = boardElement.classList.contains('house-board') ? 9 : 8;
     const [dx, dy] = offsets[e.key],
-      col = (index % 8) + dx,
-      row = Math.floor(index / 8) + dy;
-    if (col < 0 || col > 7 || row < 0 || row > 7) return;
-    const next = cells[row * 8 + col];
+      col = (index % cols) + dx,
+      row = Math.floor(index / cols) + dy;
+    if (col < 0 || col >= cols || row < 0 || row > 7) return;
+    const next = cells[row * cols + col];
+    if (!next.dataset.square) return;
     e.target.tabIndex = -1;
     next.tabIndex = 0;
     next.focus();
@@ -746,15 +881,31 @@
   });
   function playStand(id, target, expected) {
     window.StandEffects.stop();
+    window.BoardStandFX.stop();
     stopAudio();
     if (id === 'world' || id === 'crimson' || id === 'resume') {
       window.StandEffects.play(
         id === 'world' ? 'b' : id === 'crimson' ? 'w' : id,
         sound,
       );
+      if (id !== 'resume') playClip(id === 'world' ? 'world-call' : 'diavolo');
       return;
     }
-    playClip(id);
+    playClip(id === 'shot' ? 'enigma-shot' : id);
+    if (extraStands.includes(id) || id === 'shot') {
+      window.BoardStandFX.play(
+        id,
+        target ||
+          (id === 'superfly'
+            ? game.state.tower
+            : id === 'house' && game.state.position
+              ? 'i4'
+              : null) ||
+          'e4',
+        expected,
+      );
+      return;
+    }
     const piece = target && game.chess.get(target);
     if (
       piece &&
@@ -763,29 +914,60 @@
     )
       window.PieceEffects.play(id, target);
   }
-  function useStand(color, target) {
+  function useStand(color, target, choice) {
     if (online.id) {
       if (online.side === color)
-        online.act({ type: 'ability', target }).catch(roomActionError);
+        online.act({ type: 'ability', target, choice }).catch(roomActionError);
       return;
     }
     track();
-    if (!game.activate(color, target)) {
+    if (!game.activate(color, target, choice)) {
       if (debug) debugUndo.pop();
       return;
     }
     changed();
-    playStand(game.state.stands[color], target);
+    playStand(
+      game.state.stands[color],
+      game.state.stands[color] === 'kiss' ? choice : target,
+    );
+  }
+  for (const color of ['w', 'b']) {
+    const btn = node('button', 'tool-button', 'Снять наклейку');
+    btn.id = 'merge-' + color;
+    $('power-' + color).after(btn);
+    btn.hidden = true;
+    btn.onclick = () => {
+      if (online.id) {
+        online.act({ type: 'merge' }).catch(roomActionError);
+        return;
+      }
+      const l = game.state.position?.links.find((l) => l.owner === color);
+      if (!l || !game.canMerge(color)) return;
+      track();
+      if (game.merge(color)) {
+        changed();
+        playStand('kiss', l.original);
+      }
+    };
   }
   for (const color of ['w', 'b'])
     $('power-' + color).addEventListener('click', () => {
       if (game.state.stands[color] === 'superfly') {
         showTowerZone = !showTowerZone;
         render();
+        if (showTowerZone) playStand('superfly', game.state.tower);
+        return;
+      }
+      if (game.state.stands[color] === 'house') {
+        playStand('house', 'i4');
         return;
       }
       if (game.abilityBlock(color) || !mayPlay()) return;
-      if (['diamond', 'echoes'].includes(game.state.stands[color])) {
+      if (
+        ['diamond', 'echoes', 'kiss', 'gold', 'heaven'].includes(
+          game.state.stands[color],
+        )
+      ) {
         const next = targeting === color ? null : color;
         resetSelection();
         targeting = next;
@@ -902,6 +1084,7 @@
         if (event.kind === 'ability') {
           effect = game.state.stands[event.color];
           target = event.target;
+          if (effect === 'kiss') target = event.choice;
           expected = event.piece
             ? {
                 type: event.piece,
@@ -914,8 +1097,19 @@
               }
             : null;
           frozen = effect === 'world' ? 2 : 0;
+        } else if (event.kind === 'merge') {
+          effect = 'kiss';
+          target = event.target;
         } else if (event.kind === 'move') {
           moveSound(event.captured);
+          if (event.shot) {
+            effect = 'shot';
+            target = event.to;
+            expected = { color: event.color, type: event.piece };
+          } else if (event.to?.[0] === 'i') {
+            effect = 'house';
+            target = event.to;
+          }
           if (frozen && --frozen === 0) effect = 'resume';
         }
       }
@@ -924,6 +1118,12 @@
     }
     if (online.ready && (first || data.version === 2) && $('online').open)
       $('online').close();
+    if (
+      online.ready &&
+      (first || data.version === 2) &&
+      !game.state.events.length
+    )
+      passiveIntro();
   }
   async function enterRoom(op) {
     if (enteringRoom) return;
@@ -987,7 +1187,25 @@
     $('restart').close();
     stopAudio();
     changed();
+    passiveIntro();
   };
+  function passiveIntro() {
+    const house = Object.values(game.state.stands).includes('house');
+    if (game.state.tower) {
+      playStand('superfly', game.state.tower);
+      if (house) {
+        const initial = game;
+        setTimeout(() => {
+          if (
+            game === initial &&
+            !game.state.events.length &&
+            !document.querySelector('dialog[open]')
+          )
+            playStand('house', 'i4');
+        }, 3150);
+      }
+    } else if (house) playStand('house', 'i4');
+  }
   $('choose-stands').onclick = () => $('new-game').click();
   for (const [id, spec] of Object.entries(scenarios)) {
     const opt = document.createElement('option');
@@ -1018,6 +1236,7 @@
     $('scenario-hint').textContent = scenarios[id].hint;
     $('debug').close();
     changed();
+    passiveIntro();
   };
   $('debug-undo').onclick = () => {
     if (!debugUndo.length) return;
@@ -1030,9 +1249,14 @@
     track();
     if (game.recharge()) {
       changed();
-      $('debug-feedback').textContent = 'У каждого игрока 100 маны.';
+      $('debug-feedback').textContent = 'Мана обоих игроков заполнена.';
     } else debugUndo.pop();
   };
+  for (const id of extraStands) {
+    const btn = node('button', 'sample ' + id, STANDS[id].name);
+    btn.dataset.preview = id;
+    $('extra-previews').append(btn);
+  }
   for (const el of document.querySelectorAll('[data-sample]'))
     el.onclick = () => playClip(el.dataset.sample, true);
   for (const el of document.querySelectorAll('[data-preview]'))
@@ -1048,7 +1272,17 @@
               game.chess.get(cell.dataset.square),
             )?.dataset.square;
         playStand(color, square);
-      } else window.StandEffects.play(color, sound);
+      } else if (extraStands.includes(color))
+        playStand(
+          color,
+          color === 'superfly'
+            ? game.state.tower || 'd4'
+            : color === 'house' &&
+                boardElement.classList.contains('house-board')
+              ? 'i4'
+              : 'e4',
+        );
+      else playStand({ w: 'crimson', b: 'world', resume: 'resume' }[color]);
     };
   $('exit-debug').onclick = () => {
     window.StandEffects.stop();

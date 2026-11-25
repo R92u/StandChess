@@ -224,8 +224,10 @@
     }
     cell.classList.add('fx-piece-hidden');
     const index = Array.prototype.indexOf.call(board.children, cell);
-    canvas.style.left = ((index % 8) + 0.5) * 12.5 + '%';
-    canvas.style.top = (Math.floor(index / 8) + 0.5) * 12.5 + '%';
+    const cols = board.classList.contains('house-board') ? 9 : 8;
+    canvas.style.width = 400 / cols + '%';
+    canvas.style.left = (((index % cols) + 0.5) * 100) / cols + '%';
+    canvas.style.top = (Math.floor(index / cols) + 0.5) * 12.5 + '%';
   }
   function draw(now) {
     if (!active) return;

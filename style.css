@@ -691,6 +691,314 @@ h1 {
   overflow: hidden;
   border-radius: 6px;
 }
+.house-board#board {
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  aspect-ratio: 9/8;
+}
+.room-void {
+  pointer-events: none;
+  background: linear-gradient(128deg, #182b2a, #1e3030);
+}
+.sq.room-square {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 25%, #ebd5a022 25% 27%),
+    linear-gradient(145deg, #527c84, #345563);
+  color: #ffecbc;
+  box-shadow: inset 0 0 0 1px #e4ca8888;
+}
+.sq.room-square.selected {
+  box-shadow: inset 0 0 0 3px #f2deb2;
+}
+.sq.enigma-risk:before {
+  background: #ad365f99;
+  border: 2px solid #641a39;
+}
+.unit-badge,
+.walk-badge {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  right: 3%;
+  top: 4%;
+  padding: 1px 3px;
+  border-radius: 4px;
+  background: #763553;
+  color: #ffe5ef;
+  font-size: clamp(9px, 1vw, 14px);
+  line-height: 1.1;
+  font-weight: 700;
+}
+.walk-badge {
+  top: auto;
+  bottom: 8%;
+  left: 4%;
+  right: auto;
+  color: #fff4d7;
+  background: #315452;
+}
+.gold {
+  --accent: #f9d875;
+  --edge: #bba268;
+  --art: #b98943;
+  --base: #443424;
+  --shade: #67502e;
+}
+.kiss {
+  --accent: #ffb7c9;
+  --edge: #ab7285;
+  --art: #b66872;
+  --base: #3a2634;
+  --shade: #683950;
+}
+.enigma {
+  --accent: #e0c9fe;
+  --edge: #a895ab;
+  --art: #9282a9;
+  --base: #332d42;
+  --shade: #58445f;
+}
+.house {
+  --accent: #bbdfef;
+  --edge: #83999f;
+  --art: #586c90;
+  --base: #263443;
+  --shade: #38505c;
+}
+.heaven {
+  --accent: #d6ecc9;
+  --edge: #899c85;
+  --art: #92a58b;
+  --base: #293c36;
+  --shade: #48605c;
+}
+.stand-card:is(.enigma, .gold, .heaven, .house, .kiss) .art-scene img {
+  right: -2%;
+  width: 50%;
+  mask-image: linear-gradient(90deg, transparent, #000 32%);
+}
+.stand-card.house h3 {
+  font-size: clamp(1.55rem, 2.1vw, 2.55rem);
+  max-width: 84%;
+}
+#stand-fx {
+  position: absolute;
+  pointer-events: none;
+  z-index: 5;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 2px 3px #101b2f80);
+}
+#stand-fx > svg {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: visible;
+}
+#stand-fx svg g {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+#stand-fx .fold {
+  animation: paper-fold 1.2s both;
+}
+#stand-fx .sticker {
+  animation: sticker-press 1.2s both;
+}
+#stand-fx .vine,
+#stand-fx .door,
+#stand-fx .pylon {
+  transform-origin: bottom;
+  animation: rise-mark 1.25s both;
+}
+#stand-fx .gleam,
+#stand-fx .field,
+#stand-fx .link {
+  animation: stand-ripple 1.25s both;
+}
+#stand-fx .pages {
+  animation: paper-fold 1.25s both;
+}
+#stand-fx .quill {
+  animation: write-stroke 1.25s both;
+}
+#stand-fx .interior {
+  transform-origin: left;
+  transform-box: fill-box;
+  animation: door-swing 1.2s both;
+}
+#stand-fx .prop {
+  animation: prop-rise 1.45s both;
+}
+#stand-fx .flash {
+  animation: prop-flash 1.45s both;
+}
+#stand-fx .rift {
+  animation: stand-ripple 1.45s both;
+}
+#stand-fx .shot-victim {
+  position: absolute;
+  left: 22.5%;
+  top: 22.5%;
+  width: 55%;
+  animation: shot-hit 1.45s both;
+}
+@keyframes paper-fold {
+  0% {
+    transform: scale(0.2, 1) rotate(-24deg);
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.05) rotate(3deg);
+  }
+  72% {
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.13, 1) rotate(17deg);
+    opacity: 0;
+  }
+}
+@keyframes sticker-press {
+  0% {
+    transform: translate(-18%, -26%) rotate(-25deg) scale(1.3);
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+    transform: scale(0.82);
+  }
+  50%,
+  70% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.12);
+  }
+}
+@keyframes rise-mark {
+  0% {
+    transform: scale(0.8, 0.08);
+    opacity: 0;
+  }
+  35%,
+  75% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.08);
+  }
+}
+@keyframes stand-ripple {
+  0%,
+  25% {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+  48% {
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.22);
+    opacity: 0;
+  }
+}
+@keyframes write-stroke {
+  0%,
+  15% {
+    opacity: 0;
+    transform: translate(-20%, 18%);
+  }
+  30%,
+  70% {
+    opacity: 1;
+  }
+  85%,
+  100% {
+    opacity: 0;
+    transform: translate(10%, -10%);
+  }
+}
+@keyframes door-swing {
+  0%,
+  28% {
+    transform: scaleX(1);
+  }
+  70%,
+  100% {
+    transform: scaleX(0.22);
+  }
+}
+@keyframes prop-rise {
+  0%,
+  8% {
+    transform: translateY(25%) scaleY(0.05);
+    opacity: 0;
+  }
+  40%,
+  55% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  61% {
+    transform: translateY(6%) rotate(7deg);
+  }
+  70% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(20%) scaleY(0.1);
+    opacity: 0;
+  }
+}
+@keyframes prop-flash {
+  0%,
+  53%,
+  70%,
+  100% {
+    opacity: 0;
+  }
+  55%,
+  62% {
+    opacity: 1;
+  }
+}
+@keyframes shot-hit {
+  0%,
+  54% {
+    opacity: 1;
+  }
+  59% {
+    filter: brightness(2);
+    transform: rotate(-13deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(10%, -15%) rotate(28deg) scale(0.4);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #stand-fx * {
+    animation: none !important;
+  }
+  #stand-fx .flash {
+    display: none;
+  }
+}
+#extra-previews,
+#stand-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+#extra-previews {
+  margin-top: 0.55rem;
+}
 #piece-fx {
   position: absolute;
   z-index: 4;

@@ -104,14 +104,20 @@ async function roomApi(req, res, url, id, op) {
     }
     if (!action || typeof action !== 'object')
       return fail(res, 400, 'Некорректное действие.');
-    if (!room.b || action.version !== room.version || room.game.turn() !== side)
+    if (
+      !room.b ||
+      action.version !== room.version ||
+      (action.type !== 'merge' && room.game.turn() !== side)
+    )
       return fail(res, 409, 'Позиция изменилась. Проверьте, чей сейчас ход.');
     let ok = false;
-    if (action.type === 'ability') ok = room.game.activate(side, action.target);
+    if (action.type === 'ability')
+      ok = room.game.activate(side, action.target, action.choice);
+    if (action.type === 'merge') ok = room.game.merge?.(side);
     if (
       action.type === 'move' &&
-      /^[a-h][1-8]$/.test(action.from) &&
-      /^[a-h][1-8]$/.test(action.to) &&
+      /^(?:[a-h][1-8]|i[345])$/.test(action.from) &&
+      /^(?:[a-h][1-8]|i[345])$/.test(action.to) &&
       (action.promotion === undefined ||
         ['q', 'r', 'b', 'n'].includes(action.promotion))
     ) {
@@ -131,8 +137,10 @@ const publicFiles = new Set([
   'ui.js',
   'online.js',
   'engine.js',
+  'variants.js',
   'effects.js',
   'piece-effects.js',
+  'board-fx.js',
   'CREDITS.txt',
 ]);
 const types = {
