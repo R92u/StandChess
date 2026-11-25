@@ -2,7 +2,7 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const { StandGame } = require('./engine');
+const { StandGame, STANDS } = require('./engine');
 
 const rooms = new Map();
 const ttl = 24 * 60 * 60 * 1000;
@@ -28,7 +28,7 @@ async function readAction(req) {
     body += chunk;
     if (body.length > 1024) throw new Error('Слишком большой запрос');
   }
-  return JSON.parse(body);
+  return body ? JSON.parse(body) : {};
 }
 function roomState(room, side) {
   return {
@@ -45,12 +45,25 @@ async function roomApi(req, res, url, id, op) {
   if (!token) return fail(res, 401, 'Требуется ключ игрока.');
   if (req.method !== (op ? 'POST' : 'GET'))
     return fail(res, 405, 'Метод не поддерживается.');
+  let stand;
+  if (op === 'create' || op === 'join') {
+    try {
+      stand = (await readAction(req)).stand;
+    } catch {
+      return fail(res, 400, 'Некорректный выбор стенда.');
+    }
+    if (
+      stand !== undefined &&
+      (typeof stand !== 'string' || !Object.hasOwn(STANDS, stand))
+    )
+      return fail(res, 400, 'Неизвестный стенд.');
+  }
   let room = rooms.get(id);
   if (!room && op === 'create') {
     if (rooms.size >= 500)
       return fail(res, 503, 'Сервер занят. Попробуйте позже.');
     room = {
-      game: new StandGame(),
+      game: new StandGame(undefined, 0, { w: stand || 'crimson' }),
       w: token,
       b: null,
       version: 1,
@@ -60,6 +73,10 @@ async function roomApi(req, res, url, id, op) {
   }
   if (!room) return fail(res, 404, 'Комната закрыта. Создайте новую.');
   if (op === 'join' && !room.b && token !== room.w) {
+    room.game = new StandGame(undefined, 0, {
+      ...room.game.state.stands,
+      b: stand || 'world',
+    });
     room.b = token;
     room.version++;
   }
@@ -85,7 +102,7 @@ async function roomApi(req, res, url, id, op) {
     if (!room.b || action.version !== room.version || room.game.turn() !== side)
       return fail(res, 409, 'Позиция изменилась. Проверьте, чей сейчас ход.');
     let ok = false;
-    if (action.type === 'ability') ok = room.game.activate(side);
+    if (action.type === 'ability') ok = room.game.activate(side, action.target);
     if (
       action.type === 'move' &&
       /^[a-h][1-8]$/.test(action.from) &&

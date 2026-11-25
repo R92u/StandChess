@@ -1,8 +1,12 @@
 (() => {
   'use strict';
-  const { StandGame, scenarios, scenario, MAX_MANA } = window.StandChess;
+  const { StandGame, scenarios, scenario, MAX_MANA, STANDS, DEFAULT_STANDS } =
+    window.StandChess;
   const $ = (id) => document.getElementById(id);
   const icons = {
+    gravity:
+      '<path d="M6 3v10l-3-3m3 3 3-3m8-7v10l-3-3m3 3 3-3M3 17h18M5 21h14"/>',
+    gem: '<path d="m2 9 5-6h10l5 6-10 12zM2 9h20M7 3l5 18 5-18"/>',
     swords:
       '<path d="m4 3 4 1 8 9-3 3-9-9zM14 16l5 5m-5-3 4-4M20 3l-4 1-3 4m-5 5-3 3m-2 4 5-5m-3-1 5 5"/>',
     plus: '<rect x="3" y="3" width="18" height="18" rx="5"/><path d="M12 7v10M7 12h10"/>',
@@ -46,6 +50,8 @@
   const clip = {
     w: new Audio('assets/audio/king-crimson.mp3'),
     b: new Audio('assets/audio/the-world.mp3'),
+    echoes: new Audio('assets/audio/echoes.mp3'),
+    diamond: new Audio('assets/audio/diamond.mp3'),
   };
   for (const audio of Object.values(clip)) {
     audio.preload = 'auto';
@@ -84,7 +90,8 @@
     promote = null,
     toastTimer,
     synth;
-  let focusSquare = 'e2';
+  let focusSquare = 'e2',
+    targeting = null;
   let gesture = null,
     suppressDragClick = false;
   const boardElement = $('board');
@@ -125,7 +132,7 @@
     stopAudio();
     if (preview)
       $('debug-feedback').textContent =
-        'Звучит ' + (color === 'w' ? 'King Crimson' : 'The World');
+        'Звучит ' + STANDS[DEFAULT_STANDS[color] || color].name;
     clip[color].play().catch((err) => {
       if (err.name === 'AbortError') return;
       const msg = 'Не удалось воспроизвести запись.';
@@ -152,6 +159,7 @@
     } catch {}
   }
   function resetSelection() {
+    targeting = null;
     releaseGesture();
     selected = null;
     candidates = [];
@@ -176,6 +184,7 @@
       fragment = document.createDocumentFragment(),
       inCheck = game.chess.in_check(),
       playing = !game.result() && mayPlay();
+    const abilityTargets = targeting ? game.targets(targeting) : [];
     for (const rank of ranks)
       for (const file of files) {
         const square = file + rank,
@@ -185,6 +194,11 @@
         cell.type = 'button';
         cell.dataset.square = square;
         cell.className = 'sq';
+        const locked = piece && game.state.locked[piece.color] === square;
+        if (locked) cell.classList.add('gravity-lock');
+        const abilityTarget = abilityTargets.includes(square);
+        if (abilityTarget)
+          cell.classList.add('stand-target', game.state.stands[targeting]);
         cell.tabIndex = square === focusSquare ? 0 : -1;
         if ((file.charCodeAt(0) - 97 + Number(rank)) % 2 === 1)
           cell.classList.add('dark');
@@ -201,13 +215,15 @@
           (piece
             ? ', ' + sides[piece.color] + ', ' + pieces[piece.type]
             : ', пусто') +
-          (target ? ', доступный ход' : '');
+          (target ? ', доступный ход' : '') +
+          (locked ? ', под действием Three Freeze' : '') +
+          (abilityTarget ? ', цель стенда' : '');
         cell.setAttribute('aria-label', label);
         cell.setAttribute('aria-pressed', String(square === selected));
         if (file === files[0]) cell.append(node('span', 'coord rank', rank));
         if (rank === ranks[7]) cell.append(node('span', 'coord file', file));
         if (piece) {
-          if (playing && piece.color === game.turn())
+          if (playing && !targeting && !locked && piece.color === game.turn())
             cell.classList.add('movable');
           const img = document.createElement('img');
           img.src =
@@ -215,6 +231,24 @@
           img.alt = '';
           img.draggable = false;
           cell.append(img);
+        } else if (
+          abilityTarget &&
+          game.state.stands[targeting] === 'diamond'
+        ) {
+          const f = game.state.fallen.find(
+            (f) => f.home === square && f.color === targeting,
+          );
+          const ghost = document.createElement('img');
+          ghost.src =
+            'assets/pieces/' + targeting + f.type.toUpperCase() + '.svg';
+          ghost.alt = '';
+          ghost.className = 'revive-ghost';
+          ghost.draggable = false;
+          cell.append(ghost);
+          cell.setAttribute(
+            'aria-label',
+            square + ', восстановить: ' + pieces[f.type],
+          );
         }
         fragment.append(cell);
       }
@@ -232,7 +266,9 @@
   function renderLog() {
     const log = $('journal-list'),
       events = game.state.events;
-    const count = events.filter((e) => e.kind === 'move' && !e.erased).length;
+    const count = events.filter(
+      (e) => (e.kind === 'move' || e.stand === 'diamond') && !e.erased,
+    ).length;
     $('event-count').textContent =
       count + ' ' + plural(count, 'ход', 'хода', 'ходов');
     const fragment = document.createDocumentFragment();
@@ -264,8 +300,7 @@
         row.append(
           node(
             'span',
-            'ability-event ' +
-              (e.color === 'w' ? 'crimson' : e.color === 'b' ? 'world' : ''),
+            'ability-event ' + (game.state.stands[e.color] || ''),
             e.text,
           ),
         );
@@ -296,28 +331,21 @@
     const colors = flipped ? ['w', 'b'] : ['b', 'w'];
     for (const [index, side] of colors.entries()) {
       const row = $(index === 0 ? 'player-top' : 'player-bottom');
-      const white = side === 'w';
+      const id = game.state.stands[side],
+        stand = STANDS[id];
       const active = !ended && side === game.turn();
       row.classList.toggle('active', active);
       row.dataset.color = side;
-      const avatar = node('div', 'avatar ' + (white ? 'crimson' : 'world'), '');
+      const avatar = node('div', 'avatar ' + id, '');
       const image = document.createElement('img');
-      image.src =
-        'assets/art/' + (white ? 'king-crimson' : 'the-world') + '-avatar.webp';
+      image.src = 'assets/art/' + stand.art + '-avatar.webp';
       image.alt = '';
       avatar.append(image);
       const info = node('div', 'player-text', ''),
         label = node('span', 'player-side', '');
       label.innerHTML = stone(side);
-      label.append(
-        document.createTextNode(
-          sides[side] + ' · ' + (white ? 'King Crimson' : 'The World'),
-        ),
-      );
-      info.append(
-        node('span', 'player-name', white ? 'Дьяволо' : 'Дио'),
-        label,
-      );
+      label.append(document.createTextNode(sides[side] + ' · ' + stand.name));
+      info.append(node('span', 'player-name', stand.user), label);
       row.replaceChildren(avatar, info);
       if (active) {
         const led = node('span', 'player-led', '');
@@ -340,8 +368,8 @@
       result ||
       (s.freeze
         ? s.freeze === 2
-          ? 'Ход чёрных · первый ход'
-          : 'Ход чёрных · второй ход'
+          ? (color === 'w' ? 'Ход белых' : 'Ход чёрных') + ' · первый ход'
+          : (color === 'w' ? 'Ход белых' : 'Ход чёрных') + ' · второй ход'
         : (check ? 'Шах · ' : '') +
           (color === 'w' ? 'Ход белых' : 'Ход чёрных'));
     if (online.id && !result) {
@@ -358,29 +386,36 @@
     document.body.dataset.timeStopped = String(Boolean(s.freeze) && !result);
     $('move-number').textContent = 'Ход ' + s.fen.split(' ')[5];
     for (const side of ['w', 'b']) {
+      const id = s.stands[side],
+        stand = STANDS[id],
+        card = $('card-' + side);
+      if (card.dataset.stand !== id) {
+        card.dataset.stand = id;
+        card.className = 'stand-card ' + id;
+        card.querySelector('.art-scene img').src =
+          'assets/art/' + stand.art + '.webp';
+        card.querySelector('h3').textContent = stand.name;
+        card.querySelector('.power-name').innerHTML =
+          '<i>' + icon(stand.icon) + '</i>' + stand.power;
+        card.querySelector('.stand-body p').textContent = stand.description;
+      }
       const blocked = game.abilityBlock(side),
         btn = $('power-' + side);
       btn.disabled =
         Boolean(blocked) || !mayPlay() || (online.id && online.side !== side);
       btn.title = blocked || 'Потратить 100 маны';
-      let action = side === 'w' ? 'Стереть ход' : 'Остановить время';
+      let action = targeting === side ? 'Отмена выбора' : stand.action;
       if (blocked) {
         if (result) action = 'Партия завершена';
         else if (s.freeze) action = 'Время остановлено';
         else if (s.mana[side] < MAX_MANA) action = 'Нужно 100 маны';
         else if (color !== side)
           action = side === 'w' ? 'В ход белых' : 'В ход чёрных';
-        else if (!s.lastMove) action = 'После хода чёрных';
-        else action = 'Ответ на шах';
+        else action = blocked;
       }
       btn.replaceChildren(node('i', '', ''), document.createTextNode(action));
       btn.firstChild.innerHTML = icon(blocked ? 'clock' : 'zap');
-      btn.setAttribute(
-        'aria-label',
-        (side === 'w' ? 'King Crimson' : 'The World') +
-          ' · ' +
-          (blocked || 'активировать'),
-      );
+      btn.setAttribute('aria-label', stand.name + ' · ' + (blocked || action));
       const meter = $('mana-' + side);
       const value = s.mana[side];
       meter.setAttribute('aria-valuenow', String(value));
@@ -398,11 +433,18 @@
     $('debug-undo').disabled = !debugUndo.length;
     $('recharge').disabled = !game.canRecharge();
     $('new-game').disabled = Boolean(online.id);
+    $('choose-stands').hidden = Boolean(online.id || game.state.events.length);
     $('debug-open').disabled = Boolean(online.id);
     $('online-open').disabled = debug;
     $('online-open').classList.toggle('active', Boolean(online.id));
     $('online-open').setAttribute('aria-pressed', String(Boolean(online.id)));
     if ($('online').open) renderRoomDialog();
+    $('target-hint').hidden = !targeting;
+    if (targeting)
+      $('target-hint').textContent =
+        s.stands[targeting] === 'echoes'
+          ? 'Выберите фигуру соперника, которую прижмёт Echoes.'
+          : 'Выберите подсвеченную стартовую клетку для восстановления.';
   }
   function makeMove(from, to, promotion) {
     if (!mayPlay()) return;
@@ -425,6 +467,10 @@
   function chooseSquare(square) {
     focusSquare = square;
     if (game.result() || !mayPlay()) return;
+    if (targeting) {
+      if (game.targets(targeting).includes(square)) useStand(targeting, square);
+      return;
+    }
     const legal = candidates.filter((m) => m.to === square);
     if (selected && legal.length) {
       if (legal.some((m) => m.promotion)) {
@@ -445,7 +491,11 @@
       } else makeMove(selected, square);
       return;
     }
-    if (selected !== square && game.chess.get(square)?.color === game.turn()) {
+    if (
+      selected !== square &&
+      game.chess.get(square)?.color === game.turn() &&
+      game.state.locked[game.turn()] !== square
+    ) {
       selected = square;
       candidates = game.moves(square);
     } else resetSelection();
@@ -570,6 +620,10 @@
   document.addEventListener(
     'keydown',
     (e) => {
+      if (e.key === 'Escape' && targeting) {
+        resetSelection();
+        render();
+      }
       if (e.key === 'Escape' && gesture) cancelGesture();
     },
     true,
@@ -612,19 +666,65 @@
     $('promotion').close();
     makeMove(from, to, piece);
   });
+  function playStand(id, target) {
+    window.StandEffects.stop();
+    stopAudio();
+    if (id === 'world' || id === 'crimson' || id === 'resume') {
+      window.StandEffects.play(
+        id === 'world' ? 'b' : id === 'crimson' ? 'w' : id,
+        sound,
+      );
+      return;
+    }
+    playClip(id);
+    const cell = boardElement.querySelector('[data-square="' + target + '"]');
+    if (!cell) return;
+    const rect = cell.getBoundingClientRect();
+    const burst = node('div', 'stand-burst ' + id, '');
+    burst.setAttribute('aria-hidden', 'true');
+    Object.assign(burst.style, {
+      left: rect.left + 'px',
+      top: rect.top + 'px',
+      width: rect.width + 'px',
+      height: rect.height + 'px',
+    });
+    for (let n = 0; n < 8; n++) {
+      const ray = document.createElement('i');
+      ray.style.setProperty('--angle', 45 * n + 'deg');
+      burst.append(ray);
+    }
+    document.body.append(burst);
+    setTimeout(() => burst.remove(), 950);
+  }
+  function useStand(color, target) {
+    if (online.id) {
+      if (online.side === color)
+        online.act({ type: 'ability', target }).catch(roomActionError);
+      return;
+    }
+    track();
+    if (!game.activate(color, target)) {
+      if (debug) debugUndo.pop();
+      return;
+    }
+    changed();
+    playStand(game.state.stands[color], target);
+  }
   for (const color of ['w', 'b'])
     $('power-' + color).addEventListener('click', () => {
       if (game.abilityBlock(color) || !mayPlay()) return;
-      if (online.id) {
-        if (online.side === color)
-          online.act({ type: 'ability' }).catch(roomActionError);
+      if (['diamond', 'echoes'].includes(game.state.stands[color])) {
+        const next = targeting === color ? null : color;
+        resetSelection();
+        targeting = next;
+        render();
+        if (next)
+          boardElement
+            .querySelector('.stand-target')
+            ?.focus({ preventScroll: false });
         return;
       }
-      track();
-      game.activate(color);
-      stopAudio();
-      changed();
-      window.StandEffects.play(color, sound);
+      useStand(color);
     });
   $('flip').onclick = () => {
     cancelGesture();
@@ -655,6 +755,7 @@
     const active = Boolean(online.id),
       invite = invitedRoom();
     $('invite-tools').hidden = !active;
+    $('seat-stand-label').hidden = active || location.protocol === 'file:';
     $('room-enter').hidden = active || location.protocol === 'file:';
     $('online-public').hidden =
       location.protocol !== 'file:' &&
@@ -685,6 +786,7 @@
     }
   }
   function revealRoom() {
+    $('seat-stand').value = invitedRoom() ? 'world' : 'crimson';
     roomFeedback();
     renderRoomDialog();
     if (!$('online').open) $('online').showModal();
@@ -719,19 +821,21 @@
     resetSelection();
     render();
     if (!first) {
-      let effect = null;
+      let effect = null,
+        target = null;
       let frozen = previous.freeze;
       for (const event of data.state.events.slice(previous.events.length)) {
         if (event.kind === 'ability') {
-          effect = event.color;
-          frozen = event.color === 'b' ? 2 : 0;
+          effect = game.state.stands[event.color];
+          target = event.target;
+          frozen = effect === 'world' ? 2 : 0;
         } else if (event.kind === 'move') {
           moveSound(event.captured);
           if (frozen && --frozen === 0) effect = 'resume';
         }
       }
       if (frozen && !data.state.freeze) effect = 'resume';
-      if (effect) window.StandEffects.play(effect, sound);
+      if (effect) playStand(effect, target);
     }
     if (online.ready && (first || data.version === 2) && $('online').open)
       $('online').close();
@@ -743,7 +847,7 @@
     roomFeedback();
     renderRoomDialog();
     try {
-      await online.enter(id, op);
+      await online.enter(id, op, $('seat-stand').value);
     } catch (e) {
       if (!$('online').open) $('online').showModal();
       if (e.status === 404 && !op)
@@ -774,7 +878,13 @@
       roomFeedback('Ссылка выделена для копирования.');
     }
   };
+  for (const field of ['pick-w', 'pick-b', 'seat-stand']) {
+    for (const [id, stand] of Object.entries(STANDS))
+      $(field).add(new Option(stand.name, id));
+  }
   $('new-game').onclick = () => {
+    for (const side of ['w', 'b'])
+      $('pick-' + side).value = game.state.stands[side];
     $('restart-note').textContent = debug
       ? 'Тестовая доска вернётся в начальную позицию. Основная партия сохранена.'
       : 'Текущая партия и её журнал будут сброшены. Оба игрока начнут с 0 маны.';
@@ -782,13 +892,17 @@
   };
   $('restart-confirm').onclick = () => {
     track();
-    game = new StandGame();
+    game = new StandGame(undefined, 0, {
+      w: $('pick-w').value,
+      b: $('pick-b').value,
+    });
     if (!debug) mainGame = game;
     $('scenario-hint').textContent = 'Тестовая партия с начальной позиции.';
     $('restart').close();
     stopAudio();
     changed();
   };
+  $('choose-stands').onclick = () => $('new-game').click();
   for (const [id, spec] of Object.entries(scenarios)) {
     const opt = document.createElement('option');
     opt.value = id;
@@ -839,7 +953,9 @@
       const color = el.dataset.preview;
       $('debug').close();
       stopAudio();
-      window.StandEffects.play(color, sound);
+      if (color === 'echoes' || color === 'diamond')
+        playStand(color, color === 'echoes' ? 'g8' : 'e2');
+      else window.StandEffects.play(color, sound);
     };
   $('exit-debug').onclick = () => {
     window.StandEffects.stop();

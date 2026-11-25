@@ -64,6 +64,7 @@
             </header>
             <div class="board-shell">
               <div class="player-row" id="player-top"></div>
+              <p id="target-hint" role="status" hidden></p>
               <div class="board-rim">
                 <div id="board" role="group" aria-label="Игровое поле"></div>
               </div>
@@ -95,6 +96,9 @@
                   <h2 id="stands-title">Стенды</h2>
                   <p>+10 маны за свой ход · 100 за активацию</p>
                 </div>
+                <button id="choose-stands" class="tool-button">
+                  Выбрать стенды
+                </button>
               </header>
               <article class="stand-card crimson" id="card-w">
                 <div class="stand-scene">
@@ -276,6 +280,9 @@
           </button>
         </div>
       </div>
+      <label id="seat-stand-label" class="stand-field"
+        >Ваш стенд<select id="seat-stand"></select
+      ></label>
       <p id="online-feedback" role="status" hidden></p>
       <p id="online-public" hidden>
         Для игры с другом через интернет
@@ -325,6 +332,14 @@
       </div>
       <h3 class="field-label">Предпросмотр анимации</h3>
       <div class="dialog-row">
+        <button class="sample echoes" data-preview="echoes">
+          <i data-icon="gravity"></i>Echoes ACT 3
+        </button>
+        <button class="sample diamond" data-preview="diamond">
+          <i data-icon="gem"></i>Crazy Diamond
+        </button>
+      </div>
+      <div class="dialog-row">
         <button class="sample crimson" data-preview="w">
           <i data-icon="rewind"></i>King Crimson</button
         ><button class="sample world" data-preview="b">
@@ -347,6 +362,14 @@
       <p id="restart-note">
         Текущая партия и её журнал будут сброшены. Оба игрока начнут с 0 маны.
       </p>
+      <div class="stand-picks">
+        <label class="stand-field"
+          >Стенд белых<select id="pick-w"></select
+        ></label>
+        <label class="stand-field"
+          >Стенд чёрных<select id="pick-b"></select
+        ></label>
+      </div>
       <div class="dialog-row">
         <button class="tool-button close">Продолжить игру</button
         ><button id="restart-confirm" class="primary">Начать заново</button>

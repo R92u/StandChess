@@ -48,12 +48,12 @@ window.StandRoom = class StandRoom {
     }
     return data;
   }
-  async enter(id, op) {
+  async enter(id, op, stand) {
     const key = this.saved(id) || this.random(24);
     try {
       localStorage.setItem('stand-chess.seat.' + id, key);
     } catch {}
-    const data = await this.request(id, key, op);
+    const data = await this.request(id, key, op, op ? { stand } : undefined);
     this.reset();
     this.id = id;
     this.key = key;
