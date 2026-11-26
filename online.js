@@ -110,7 +110,9 @@ window.StandRoom = class StandRoom {
         ...action,
         version,
       });
-      if (this.id === id) this.apply(data);
+      if (this.id !== id) return false;
+      this.apply(data);
+      return true;
     } catch (e) {
       if (this.id === id) {
         await this.poll();

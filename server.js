@@ -5,6 +5,10 @@ const path = require('node:path');
 const { StandGame, STANDS } = require('./engine');
 
 const rooms = new Map();
+const isSecret = (event) => event?.kind === 'ability' && event.stand === 'dust';
+function seatVersion(room, side) {
+  return room.version - room.privateUpdates[side === 'w' ? 'b' : 'w'];
+}
 const ttl = 24 * 60 * 60 * 1000;
 const timer = setInterval(() => {
   for (const [id, room] of rooms)
@@ -35,8 +39,11 @@ function rememberDustPosition(room) {
   const game = room.game,
     s = game.state;
   if (!Object.values(s.stands).includes('dust')) return;
+  if (isSecret(s.events.at(-1))) return;
   room.frames ??= [];
-  room.frames[s.events.length] = {
+  const publicIndex = s.events.filter((event) => !isSecret(event)).length;
+  room.frames[publicIndex] = {
+    eventCount: s.events.length,
     position: s.position,
     fen: s.fen,
     mana: { ...s.mana },
@@ -52,8 +59,9 @@ function roomState(room, side, index) {
     state = game.snapshot();
   if (room.frames) {
     if (index !== undefined) {
-      Object.assign(state, structuredClone(room.frames[index]));
-      state.events.length = index;
+      const { eventCount, ...frame } = structuredClone(room.frames[index]);
+      Object.assign(state, frame);
+      state.events.length = eventCount;
     } else {
       state.verdict = game.result();
       if (game.turn() === side)
@@ -65,13 +73,23 @@ function roomState(room, side, index) {
       if (board)
         for (const unit of Object.values(board.units))
           if (unit.color !== side) delete unit.dust;
-    for (const event of state.events)
-      if (event.stand === 'dust' && event.color !== side) {
-        delete event.target;
-        delete event.piece;
-      }
+    const foe = side === 'w' ? 'b' : 'w';
+    if (state.stands[foe] === 'dust') {
+      delete state.mana[foe];
+      if (state.lastMove?.color === foe) delete state.lastMove.manaEarned;
+    }
+    if (state.lastMove)
+      state.lastMove.event = state.events
+        .slice(0, state.lastMove.event)
+        .filter((e) => !isSecret(e)).length;
+    state.events = state.events.filter((e) => !isSecret(e));
   }
-  return { side, ready: Boolean(room.b), version: room.version, state };
+  return {
+    side,
+    ready: Boolean(room.b),
+    version: seatVersion(room, side),
+    state,
+  };
 }
 async function roomApi(req, res, url, id, op) {
   const token = /^Bearer ([0-9a-f]{48})$/.exec(
@@ -102,6 +120,7 @@ async function roomApi(req, res, url, id, op) {
       w: token,
       b: null,
       version: 1,
+      privateUpdates: { w: 0, b: 0 },
       seen: Date.now(),
     };
     rememberDustPosition(room);
@@ -143,7 +162,7 @@ async function roomApi(req, res, url, id, op) {
       return fail(res, 400, 'Некорректное действие.');
     if (
       !room.b ||
-      action.version !== room.version ||
+      action.version !== seatVersion(room, side) ||
       (action.type !== 'merge' && room.game.turn() !== side)
     )
       return fail(res, 409, 'Позиция изменилась. Проверьте, чей сейчас ход.');
@@ -161,6 +180,7 @@ async function roomApi(req, res, url, id, op) {
       ok = room.game.move(action.from, action.to, action.promotion);
     }
     if (!ok) return fail(res, 422, 'Действие недоступно в этой позиции.');
+    if (isSecret(room.game.state.events.at(-1))) room.privateUpdates[side]++;
     rememberDustPosition(room);
     room.version++;
   }
@@ -170,7 +190,7 @@ async function roomApi(req, res, url, id, op) {
       return fail(res, 400, 'Нет такой позиции');
     return reply(res, 200, roomState(room, side, i));
   }
-  if (!op && url.searchParams.get('since') === String(room.version))
+  if (!op && url.searchParams.get('since') === String(seatVersion(room, side)))
     return reply(res, 204);
   return reply(res, 200, roomState(room, side));
 }

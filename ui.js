@@ -169,6 +169,8 @@
       s.stickyRulesFrom > 0 ? 1 : 2,
     );
   }
+  const visibleEvents = (g) =>
+    g.state.events.filter((e) => e.kind !== 'ability' || e.stand !== 'dust');
   let seekVersion = 0;
   async function seek(index) {
     const version = ++seekVersion;
@@ -176,7 +178,7 @@
     resetSelection();
     stopAudio();
     window.StandEffects.stop();
-    if (index >= events.length) review = null;
+    if (index >= visibleEvents(game).length) review = null;
     else if (online.id && Object.values(game.state.stands).includes('dust')) {
       const room = online.id;
       try {
@@ -196,8 +198,13 @@
       }
     } else {
       const replay =
-        review && review.state.events.length <= index ? review : replayStart();
-      for (const e of events.slice(replay.state.events.length, index)) {
+        review && visibleEvents(review).length <= index
+          ? review
+          : replayStart();
+      let remaining = index - visibleEvents(replay).length;
+      for (const e of events.slice(replay.state.events.length)) {
+        if (!remaining) break;
+        if (e.kind !== 'ability' || e.stand !== 'dust') remaining--;
         // Old games can have recorded moves or captures of transparent pieces.
         if (
           replay.state.position?.stickyRules === 1 &&
@@ -232,12 +239,12 @@
   }
   $('replay-first').onclick = () => seek(0);
   $('replay-prev').onclick = () =>
-    seek(Math.max(0, displayed().state.events.length - 1));
-  $('replay-next').onclick = () => seek(displayed().state.events.length + 1);
-  $('replay-last').onclick = () => seek(game.state.events.length);
+    seek(Math.max(0, visibleEvents(displayed()).length - 1));
+  $('replay-next').onclick = () => seek(visibleEvents(displayed()).length + 1);
+  $('replay-last').onclick = () => seek(visibleEvents(game).length);
   function renderReplay() {
-    const end = game.state.events.length,
-      index = displayed().state.events.length;
+    const end = visibleEvents(game).length,
+      index = visibleEvents(displayed()).length;
     $('replay-first').disabled = $('replay-prev').disabled = index === 0;
     $('replay-last').disabled = $('replay-next').disabled = !review;
     $('replay-status').textContent = review
@@ -433,8 +440,6 @@
         if (target) cell.classList.add(piece ? 'capture' : 'legal');
         if (inCheck && piece?.type === 'k' && piece.color === game.turn())
           cell.classList.add('check');
-        if (piece?.dust && online.side === piece.color)
-          cell.classList.add('dust-mark');
         const transparency = piece?.transparent;
         const transparencyLabel = transparency
           ? 'Sticky Fingers · ' +
@@ -550,7 +555,7 @@
   }
   function renderLog() {
     const log = $('journal-list'),
-      events = game.state.events;
+      events = visibleEvents(game);
     const count = events.filter(
       (e) =>
         (e.kind === 'move' ||
@@ -758,7 +763,20 @@
         (online.id &&
           (online.side !== side || online.busy || !online.connected)) ||
         !game.canMerge?.(side);
-      meter.hidden = passive;
+      const privateMana = id === 'dust' && side !== (online.side || color);
+      meter.hidden = passive || privateMana;
+      const powerButton = $('power-' + side);
+      powerButton.hidden = privateMana;
+      if (privateMana) {
+        meter.removeAttribute('aria-valuenow');
+        meter.style.removeProperty('--mana-fill');
+        meter.querySelector('b').textContent = '';
+        powerButton.disabled = true;
+        powerButton.removeAttribute('title');
+        powerButton.removeAttribute('aria-label');
+        powerButton.textContent = stand.action;
+        continue;
+      }
       const blocked = game.abilityBlock(side),
         btn = $('power-' + side);
       if (passive) {
@@ -1116,6 +1134,10 @@
     return true;
   }
   function playStand(id, target, expected) {
+    if (id === 'dust') {
+      playClip('dust');
+      return;
+    }
     window.StandEffects.stop();
     window.BoardStandFX.stop();
     stopAudio();
@@ -1163,8 +1185,15 @@
   }
   function useStand(color, target, choice) {
     if (online.id) {
-      if (online.side === color)
-        online.act({ type: 'ability', target, choice }).catch(roomActionError);
+      if (online.side === color) {
+        const stand = game.state.stands[color];
+        online
+          .act({ type: 'ability', target, choice })
+          .then((applied) => {
+            if (applied && stand === 'dust') playClip('dust');
+          })
+          .catch(roomActionError);
+      }
       return;
     }
     track();
@@ -1485,7 +1514,7 @@
     ($('scenario-preview').textContent = scenarios[$('scenario').value].hint);
   $('scenario').onchange();
   $('debug-open').onclick = () => {
-    if (review) seek(game.state.events.length);
+    if (review) seek(visibleEvents(game).length);
     if (!debug) {
       game = StandGame.restore(mainGame.snapshot());
       debug = true;
