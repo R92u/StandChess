@@ -157,7 +157,7 @@ test('mixed stands preserve tower occupancy, en passant, castling, resurrection 
     '7k/8/8/8/3R4/8/8/7K w - - 0 1',
     100,
     { w: 'superfly', b: 'enigma' },
-    'a1',
+    'c3',
   );
   assert.equal(t.move('d4', 'e4'), null);
   move(t, 'd4', 'd3');

@@ -9,6 +9,26 @@
   const MOVE_MANA = 10;
   const DEFAULT_STANDS = { w: 'crimson', b: 'world' };
   const STANDS = {
+    sticky: {
+      name: 'Sticky Fingers',
+      user: 'Бруно',
+      art: 'sticky',
+      icon: 'zip',
+      power: 'Расстегнуть молнию',
+      action: 'Сделать прозрачной',
+      description:
+        'На два своих хода делает прозрачной любую фигуру, кроме королей. Сквозь неё можно ходить, а саму фигуру можно взять. Заменяет ход.',
+    },
+    wonder: {
+      name: 'Wonder of U',
+      user: 'Тоору',
+      art: 'wonder',
+      icon: 'spark',
+      power: 'Поток бедствий',
+      action: 'Призвать бедствие',
+      description:
+        'Защищает короля на три хода соперника. При первом шахе бедствие уничтожает фигуры, которые его объявили.',
+    },
     enigma: {
       name: 'Enigma',
       user: 'Тэруносукэ',
@@ -69,7 +89,7 @@
       action: 'Показать зону',
       icon: 'tower',
       description:
-        'В радиусе трёх клеток от башни должна остаться хотя бы одна фигура любого цвета. Через саму башню можно ходить.',
+        'В зоне башни должна остаться хотя бы одна фигура любого цвета. На клетку башни можно встать и через неё можно ходить.',
     },
     crimson: {
       name: 'King Crimson',
@@ -121,19 +141,21 @@
       Math.abs(a[1] - b[1]),
     );
   const copy = (value) => JSON.parse(JSON.stringify(value));
-  const inTower = (tower, sq) => Boolean(tower && distance(tower, sq) <= 3);
-  function chooseTower(board) {
+  const inTower = (tower, sq, radius = 1) =>
+    Boolean(tower && distance(tower, sq) <= radius);
+  function chooseTower(board, radius) {
     const occupied = squares.filter((sq) => board.get(sq));
     const candidates = squares.filter(
-      (sq) => !board.get(sq) && occupied.some((piece) => inTower(sq, piece)),
+      (sq) =>
+        !board.get(sq) && occupied.some((piece) => inTower(sq, piece, radius)),
     );
     if (!candidates.length) throw new Error('Нет свободной клетки для башни');
     return candidates[Math.floor(Math.random() * candidates.length)];
   }
   // Count all pieces after the complete move. Castling moves two pieces;
   // an en passant capture removes a pawn on a different square.
-  function leavesTowerOccupied(tower, count, m) {
-    const inside = (sq) => Number(inTower(tower, sq));
+  function leavesTowerOccupied(tower, radius, count, m) {
+    const inside = (sq) => Number(inTower(tower, sq, radius));
     let after = count - inside(m.from) + inside(m.to);
     if (m.captured)
       after -= inside(m.flags.includes('e') ? m.to[0] + m.from[1] : m.to);
@@ -161,6 +183,7 @@
       initialMana = 0,
       stands = DEFAULT_STANDS,
       tower = null,
+      towerRadius = 1,
     ) {
       this.chess = new Chess(fen);
       const selected = { ...DEFAULT_STANDS, ...stands };
@@ -171,8 +194,9 @@
         fen,
         stands: selected,
         tower: Object.values(selected).includes('superfly')
-          ? tower || chooseTower(this.chess)
+          ? tower || chooseTower(this.chess, towerRadius)
           : null,
+        towerRadius,
         locked: { w: null, b: null },
         homes: {},
         fallen: [],
@@ -209,6 +233,8 @@
       game.state = copy(data);
       game.state.stands ??= { ...DEFAULT_STANDS };
       game.state.tower ??= null;
+      // Games saved before the radius change must remain playable and replayable.
+      game.state.towerRadius ??= game.state.tower ? 3 : 1;
       game.state.locked ??= { w: null, b: null };
       game.state.homes ??= {};
       game.state.fallen ??= [];
@@ -257,7 +283,9 @@
     towerOccupants(board = this.chess) {
       const tower = this.state.tower;
       return tower
-        ? squares.filter((sq) => inTower(tower, sq) && board.get(sq))
+        ? squares.filter(
+            (sq) => inTower(tower, sq, this.state.towerRadius) && board.get(sq),
+          )
         : [];
     }
     #legalMoves(board, square) {
@@ -276,7 +304,9 @@
       if (tower) {
         const count = this.towerOccupants(board).length;
         if (count <= 2)
-          moves = moves.filter((m) => leavesTowerOccupied(tower, count, m));
+          moves = moves.filter((m) =>
+            leavesTowerOccupied(tower, this.state.towerRadius, count, m),
+          );
       }
       return moves;
     }
@@ -608,6 +638,20 @@
     }
   }
   const scenarios = {
+    sticky: {
+      label: 'Sticky Fingers · прозрачная фигура',
+      stands: { w: 'sticky' },
+      mana: MAX_MANA,
+      fen: '4k3/8/8/8/8/8/P6r/R3K3 w - - 0 1',
+      hint: 'Расстегните пешку a2 и проверьте, как изменились ходы вдоль линии a.',
+    },
+    wonder: {
+      label: 'Wonder of U · бедствие при шахе',
+      stands: { w: 'wonder' },
+      mana: MAX_MANA,
+      fen: 'k7/8/8/7r/8/8/P7/4K3 w - - 0 1',
+      hint: 'Активируйте Wonder of U, сыграйте a2–a3, затем поставьте шах ладьёй h5–e5. Бедствие настигнет ладью.',
+    },
     enigma: {
       label: 'Enigma · отступление',
       stands: { w: 'enigma' },
@@ -642,9 +686,9 @@
     superfly: {
       label: 'Super Fly · последняя фигура',
       stands: { w: 'superfly' },
-      tower: 'a1',
+      tower: 'c3',
       fen: '7k/8/8/8/3R4/8/8/7K w - - 0 1',
-      hint: 'Башня на a1. Ладья d4 одна в зоне: она может уйти на d3, но не на e4. После входа другой фигуры ограничение снимется.',
+      hint: 'Вокруг башни c3 зона 3×3. Ладья на d4 одна в зоне и может перейти на d3. Ход на e4 станет доступен, когда в зону войдёт другая фигура.',
     },
     echoes: {
       label: 'Echoes ACT 3 · прижать коня',

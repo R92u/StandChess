@@ -11,6 +11,7 @@
   } = window.StandChess;
   const $ = (id) => document.getElementById(id);
   const icons = {
+    zip: '<path d="M9 2v7m6-7v7M9 3h3m0 2h3M9 7h3m-2 7L5 21m9-7 5 7"/><path d="m9 9 3-2 3 2v3l-3 3-3-3z"/><path d="M12 10v2"/>',
     tower:
       '<path d="m12 2-2 4h4zM10.5 6 6 22m7.5-16L18 22M4 22h5m6 0h5M6 7h12l2 2h-4M6 7 4 9h4m-3 2h14l2 2h-5m-11-2-2 2h5m1.4-.8 5.9 4.8m-1.9-4.8L8.2 17m-.5 2.4 8.8-2.1M9 17l8 4"/>',
     gravity:
@@ -62,10 +63,19 @@
     echoes: new Audio('assets/audio/echoes.mp3'),
     diamond: new Audio('assets/audio/diamond.mp3'),
   };
-  const extraStands = ['enigma', 'gold', 'kiss', 'heaven', 'house', 'superfly'];
+  const extraStands = [
+    'enigma',
+    'gold',
+    'kiss',
+    'heaven',
+    'house',
+    'superfly',
+    'wonder',
+    'sticky',
+  ];
   for (const id of extraStands)
     clip[id] = new Audio('assets/audio/' + id + '.mp3');
-  for (const id of ['enigma-shot', 'diavolo', 'world-call'])
+  for (const id of ['enigma-shot', 'diavolo', 'world-call', 'calamity'])
     clip[id] = new Audio('assets/audio/' + id + '.mp3');
   for (const audio of Object.values(clip)) {
     audio.preload = 'auto';
@@ -143,7 +153,7 @@
       fen ||= position + ' 0 1';
       mana = Number(w);
     }
-    return new StandGame(fen, mana, s.stands, s.tower);
+    return new StandGame(fen, mana, s.stands, s.tower, s.towerRadius);
   }
   function seek(index) {
     const events = game.state.events;
@@ -172,6 +182,10 @@
           toast('Не удалось восстановить этот ход');
           return;
         }
+        if (e.calamity)
+          replay.state.events.at(-1).calamity = e.calamity.map((hit) => ({
+            ...hit,
+          }));
       }
       review = replay;
     }
@@ -298,7 +312,9 @@
       $('tower-info').lastElementChild.textContent =
         'Башня ' +
         tower +
-        ' · ' +
+        (game.state.towerRadius === 3
+          ? ' · радиус 3 клетки · '
+          : ' · радиус 1 клетка · ') +
         (lastInZone
           ? 'Последняя фигура на ' + lastInZone
           : 'В зоне ' +
@@ -323,7 +339,7 @@
         if (square === targetOrigin) cell.classList.add('selected');
         if (candidates.some((m) => m.to === square && m.shot))
           cell.classList.add('enigma-risk');
-        if (tower && inTower(tower, square)) {
+        if (tower && inTower(tower, square, game.state.towerRadius)) {
           if (showTowerZone) {
             const field = node('span', 'tower-field', '');
             const col = files.indexOf(file),
@@ -337,7 +353,7 @@
               if (
                 !files[f] ||
                 !ranks[r] ||
-                !inTower(tower, files[f] + ranks[r])
+                !inTower(tower, files[f] + ranks[r], game.state.towerRadius)
               )
                 field.classList.add('edge-' + edge);
             }
@@ -371,6 +387,15 @@
         if (target) cell.classList.add(piece ? 'capture' : 'legal');
         if (inCheck && piece?.type === 'k' && piece.color === game.turn())
           cell.classList.add('check');
+        const transparency = piece?.transparent;
+        const transparencyLabel = transparency
+          ? 'Sticky Fingers · ' +
+            sides[transparency.caster] +
+            ': ещё ' +
+            transparency.turns +
+            ' ' +
+            plural(transparency.turns, 'ход', 'хода', 'ходов')
+          : '';
         const label =
           square +
           (piece
@@ -378,6 +403,7 @@
             : ', пусто') +
           (target ? ', доступный ход' : '') +
           (locked ? ', под действием Three Freeze' : '') +
+          (transparency ? ', прозрачная фигура, ' + transparencyLabel : '') +
           (square === tower ? ', башня Super Fly' : '') +
           (square === lastInZone ? ', последняя фигура в зоне башни' : '') +
           (abilityTarget ? ', цель стенда' : '');
@@ -391,6 +417,10 @@
           if (playing && !targeting && !locked && piece.color === game.turn())
             cell.classList.add('movable');
           const img = document.createElement('img');
+          if (transparency) {
+            img.classList.add('piece', 'sticky-transparent');
+            cell.title = transparencyLabel;
+          }
           img.src =
             'assets/pieces/' +
             piece.color +
@@ -426,7 +456,7 @@
               pieces[piece.type] +
               '. Ходит как ' +
               pieces[piece.walk];
-            cell.title = badge.title;
+            cell.title = [cell.title, badge.title].filter(Boolean).join(' · ');
             cell.append(badge);
             cell.setAttribute(
               'aria-label',
@@ -474,7 +504,9 @@
       (e) =>
         (e.kind === 'move' ||
           (e.kind === 'ability' &&
-            ['diamond', 'gold', 'heaven', 'kiss'].includes(e.stand))) &&
+            ['diamond', 'gold', 'heaven', 'kiss', 'sticky'].includes(
+              e.stand,
+            ))) &&
         !e.erased,
     ).length;
     $('event-count').textContent =
@@ -517,6 +549,20 @@
           ),
         );
         if (e.detail) row.append(node('span', 'detail', e.detail));
+      }
+      for (const hit of e.calamity || []) {
+        const accident = [
+          'Упала вывеска',
+          'Налетела тележка',
+          'Прорвало трубу',
+        ][hit.variant];
+        row.append(
+          node(
+            'span',
+            'detail',
+            accident + ' · ' + pieces[hit.type] + ' ' + hit.square,
+          ),
+        );
       }
       fragment.append(row);
     }
@@ -618,6 +664,21 @@
           '<i>' + icon(stand.icon) + '</i>' + stand.power;
         card.querySelector('.stand-body p').textContent = stand.description;
       }
+      if (id === 'wonder') {
+        const counter = s.position?.wonder?.[side] || 0;
+        card.querySelector('.power-name').innerHTML =
+          '<i>' +
+          icon(stand.icon) +
+          '</i>' +
+          stand.power +
+          (counter
+            ? ' · ещё ' +
+              counter +
+              ' ' +
+              plural(counter, 'ход', 'хода', 'ходов') +
+              ' соперника'
+            : '');
+      }
       const meter = $('mana-' + side);
       const passive = id === 'superfly' || id === 'house';
       const max = stand.cost || MAX_MANA;
@@ -703,6 +764,8 @@
           ? 'Выберите соседнюю клетку для копии.'
           : 'Выберите свою фигуру для копирования.',
         heaven: 'Выберите фигуру в радиусе трёх клеток от своего короля.',
+        sticky:
+          'Выберите свою или чужую фигуру, кроме короля. Активация завершит ход.',
       }[s.stands[targeting]];
   }
   function makeMove(from, to, promotion) {
@@ -720,6 +783,7 @@
     }
     moveSound(move.captured);
     changed();
+    if (playCalamity(game.state.events.at(-1)?.calamity)) return;
     if (move.shot)
       playStand('shot', to, {
         type: move.walk || move.piece,
@@ -882,7 +946,8 @@
       g.origin = boardElement.querySelector('[data-square="' + g.from + '"]');
       g.origin.classList.add('lifted');
       g.ghost = g.image.cloneNode(false);
-      g.ghost.className = 'drag-ghost';
+      g.ghost.classList.remove('piece');
+      g.ghost.classList.add('drag-ghost');
       g.ghost.setAttribute('aria-hidden', 'true');
       g.ghost.style.width = g.rect.width + 'px';
       g.ghost.style.height = g.rect.height + 'px';
@@ -971,6 +1036,13 @@
     $('promotion').close();
     makeMove(from, to, piece);
   });
+  function playCalamity(victims) {
+    if (!victims?.length) return false;
+    window.StandEffects.stop();
+    playClip('calamity');
+    window.BoardStandFX.playCalamities(victims);
+    return true;
+  }
   function playStand(id, target, expected) {
     window.StandEffects.stop();
     window.BoardStandFX.stop();
@@ -1006,6 +1078,14 @@
     )
       window.PieceEffects.play(id, target);
   }
+  function effectSquare(id, color, target, choice) {
+    if (id === 'kiss') return choice;
+    if (id === 'wonder')
+      return Object.entries(game.state.position.units).find(
+        ([, piece]) => piece.type === 'k' && piece.color === color,
+      )?.[0];
+    return target;
+  }
   function useStand(color, target, choice) {
     if (online.id) {
       if (online.side === color)
@@ -1018,10 +1098,9 @@
       return;
     }
     changed();
-    playStand(
-      game.state.stands[color],
-      game.state.stands[color] === 'kiss' ? choice : target,
-    );
+    if (playCalamity(game.state.events.at(-1)?.calamity)) return;
+    const id = game.state.stands[color];
+    playStand(id, effectSquare(id, color, target, choice));
   }
   for (const color of ['w', 'b']) {
     const btn = node('button', 'tool-button', 'Снять наклейку');
@@ -1038,7 +1117,8 @@
       track();
       if (game.merge(color)) {
         changed();
-        playStand('kiss', l.original);
+        if (!playCalamity(game.state.events.at(-1)?.calamity))
+          playStand('kiss', l.original);
       }
     };
   }
@@ -1056,7 +1136,7 @@
       }
       if (game.abilityBlock(color) || !mayPlay()) return;
       if (
-        ['diamond', 'echoes', 'kiss', 'gold', 'heaven'].includes(
+        ['diamond', 'echoes', 'kiss', 'gold', 'heaven', 'sticky'].includes(
           game.state.stands[color],
         )
       ) {
@@ -1170,15 +1250,21 @@
     resetSelection();
     render();
     if (!first && !review) {
+      const hits = [];
       let effect = null,
         target = null,
         expected = null;
       let frozen = previous.freeze;
       for (const event of data.state.events.slice(previous.events.length)) {
+        if (event.calamity) hits.push(...event.calamity);
         if (event.kind === 'ability') {
           effect = game.state.stands[event.color];
-          target = event.target;
-          if (effect === 'kiss') target = event.choice;
+          target = effectSquare(
+            effect,
+            event.color,
+            event.target,
+            event.choice,
+          );
           expected = event.piece
             ? {
                 type: event.piece,
@@ -1208,7 +1294,7 @@
         }
       }
       if (frozen && !data.state.freeze) effect = 'resume';
-      if (effect) playStand(effect, target, expected);
+      if (!playCalamity(hits) && effect) playStand(effect, target, expected);
     }
     if (online.ready && (first || data.version === 2) && $('online').open)
       $('online').close();
@@ -1355,6 +1441,9 @@
     btn.dataset.preview = id;
     $('extra-previews').append(btn);
   }
+  const accidentPreview = node('button', 'sample wonder', 'Случайное бедствие');
+  accidentPreview.dataset.preview = 'calamity';
+  $('extra-previews').append(accidentPreview);
   for (const el of document.querySelectorAll('[data-sample]'))
     el.onclick = () => playClip(el.dataset.sample, true);
   for (const el of document.querySelectorAll('[data-preview]'))
@@ -1362,7 +1451,15 @@
       const color = el.dataset.preview;
       $('debug').close();
       stopAudio();
-      if (color === 'echoes' || color === 'diamond') {
+      if (color === 'calamity') {
+        const square =
+          ['e4', 'd4', 'e5', 'd5'].find((s) => !game.chess.get(s)) || 'e4';
+        playCalamity([{ square, type: 'r', color: 'b' }]);
+      } else if (
+        color === 'echoes' ||
+        color === 'diamond' ||
+        color === 'sticky'
+      ) {
         const preferred = color === 'echoes' ? 'g8' : 'e2';
         const square = game.chess.get(preferred)
           ? preferred

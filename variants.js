@@ -34,7 +34,15 @@
       String.fromCharCode(sq.charCodeAt(0) + dx) + (Number(sq[1]) + dy);
     const advanced = (stands) =>
       Object.values(stands || {}).some((id) =>
-        ['enigma', 'gold', 'kiss', 'heaven', 'house'].includes(id),
+        [
+          'enigma',
+          'gold',
+          'kiss',
+          'heaven',
+          'house',
+          'wonder',
+          'sticky',
+        ].includes(id),
       );
     const royal = (p, c) =>
       Object.keys(p.units).find(
@@ -52,6 +60,7 @@
         units: { ...p.units },
         locked: { ...p.locked },
         snared: { ...p.snared },
+        wonder: { w: 0, b: 0, ...p.wonder },
         links: p.links.map((l) => ({ ...l })),
         fallen: [...p.fallen],
       };
@@ -129,8 +138,12 @@
         }
         const one = step(from, 0, dir),
           two = step(one, 0, dir);
-        if (!attacks && within(p, one, u) && !p.units[one]) {
-          add(one);
+        if (
+          !attacks &&
+          within(p, one, u) &&
+          (!p.units[one] || p.units[one].transparent)
+        ) {
+          if (!p.units[one]) add(one);
           if (
             from[1] === (u.color === 'w' ? '2' : '7') &&
             within(p, two, u) &&
@@ -155,16 +168,17 @@
           to = step(to, dx, dy);
           if (!within(p, to, u)) break;
           add(to);
-          if (p.units[to]) break;
+          if (p.units[to] && !p.units[to].transparent) break;
         }
       }
       return moves;
     }
+    const attacksSquare = (p, from, sq) =>
+      pseudo(p, from, true).some((m) => m.to === sq);
     function attacked(p, sq, by) {
       if (!sq) return true;
       return Object.entries(p.units).some(
-        ([from, u]) =>
-          u.color === by && pseudo(p, from, true).some((m) => m.to === sq),
+        ([from, u]) => u.color === by && attacksSquare(p, from, sq),
       );
     }
     function check(p, c) {
@@ -174,7 +188,8 @@
       return (
         !!royal(p, c) &&
         !check(p, c) &&
-        (!p.tower || Object.keys(p.units).some((s) => inTower(p.tower, s)))
+        (!p.tower ||
+          Object.keys(p.units).some((s) => inTower(p.tower, s, p.towerRadius)))
       );
     }
     function castles(p, from) {
@@ -195,7 +210,11 @@
           p.locked[c] === rk
         )
           continue;
-        if ([...(short ? 'fg' : 'dcb')].some((f) => p.units[f + r])) continue;
+        // King and rook destinations must be vacant. Only b can be crossed
+        // without becoming a destination during long castling.
+        if ([...(short ? 'fg' : 'dc')].some((f) => p.units[f + r])) continue;
+        if (!short && p.units['b' + r] && !p.units['b' + r].transparent)
+          continue;
         const mid = (short ? 'f' : 'd') + r,
           through = branch(p);
         delete through.units[from];
@@ -252,15 +271,59 @@
       p.links = p.links.filter((pair) => pair !== l);
       remove(p, l.clone);
     }
-    function finishTurn(p, c, newLink = false) {
+    function finishTurn(p, c, newLink = false, freshZip) {
       p.locked[c] = null;
       p.snared[c] = false;
       for (const l of [...p.links])
         if (l.owner === c && !newLink && --l.left === 0) merge(p, l);
+      if (p.stands[c] === 'sticky')
+        for (const [sq, u] of Object.entries(p.units)) {
+          if (u.transparent?.caster !== c || sq === freshZip) continue;
+          p.units[sq] = {
+            ...u,
+            transparent:
+              u.transparent.turns > 1
+                ? { caster: c, turns: u.transparent.turns - 1 }
+                : undefined,
+          };
+        }
       p.side = other(c);
       if (c === 'b') p.full++;
     }
-    function simulate(p, m) {
+    // Resolve from the completed board, including uncovered attacks and the
+    // disappearance of an expired Kiss copy. Collect both attackers first.
+    function resolveWonder(p, actor, completedTurn, victims) {
+      const protectedSide = other(actor);
+      if (!p.wonder[protectedSide]) return;
+      if (completedTurn) p.wonder[protectedSide]--;
+      const king = royal(p, protectedSide);
+      if (!king) return;
+      const checkers = Object.entries(p.units).filter(
+        ([sq, u]) =>
+          u.color === actor && u.type !== 'k' && attacksSquare(p, sq, king),
+      );
+      if (!checkers.length) return;
+      p.wonder[protectedSide] = 0;
+      for (const [sq, u] of checkers) {
+        victims?.push({ square: sq, type: u.walk || u.type, color: u.color });
+        remove(p, sq);
+        if (
+          p.ep?.[0] === sq[0] &&
+          u.type === 'p' &&
+          Math.abs(Number(p.ep[1]) - Number(sq[1])) === 1
+        )
+          p.ep = null;
+      }
+      p.half = 0;
+    }
+    function addCalamity(event, victims) {
+      if (victims.length)
+        event.calamity = victims.map((victim) => ({
+          ...victim,
+          variant: Math.floor(Math.random() * 3),
+        }));
+    }
+    function simulate(p, m, victims) {
       const n = branch(p),
         u = n.units[m.from],
         c = u.color;
@@ -278,6 +341,7 @@
       n.ep = m.flags === 'b' ? step(m.from, 0, c === 'w' ? 1 : -1) : null;
       n.half = u.type === 'p' || m.death || !n.units[m.to] ? 0 : p.half + 1;
       finishTurn(n, c);
+      resolveWonder(n, c, true, victims);
       return n;
     }
     function legal(p, from, first = false) {
@@ -307,6 +371,7 @@
           .filter((f) => f.color === c && !p.units[f.home])
           .map((f) => ({ target: f.home }));
       for (const [sq, u] of Object.entries(p.units)) {
+        if (id === 'sticky' && u.type !== 'k') list.push({ target: sq });
         if (id === 'echoes' && u.color !== c && u.type !== 'k')
           list.push({ target: sq });
         if (id === 'gold' && u.color === c && u.type === 'p')
@@ -336,7 +401,7 @@
       }
       return list;
     }
-    function applyChoice(p, c, { target, choice }) {
+    function applyChoice(p, c, { target, choice }, victims) {
       const n = branch(p),
         id = p.stands[c],
         u = n.units[target];
@@ -346,13 +411,15 @@
       }
       if (id === 'gold')
         n.units[target] = { ...u, type: choice, walk: undefined };
+      if (id === 'sticky')
+        n.units[target] = { ...u, transparent: { caster: c, turns: 2 } };
       if (id === 'heaven')
         n.units[target] = {
           ...u,
           walk: choice === u.type ? undefined : choice,
         };
       if (id === 'kiss') {
-        n.units[choice] = { ...u, home: undefined };
+        n.units[choice] = { ...u, home: undefined, transparent: undefined };
         n.links.push({ original: target, clone: choice, owner: c, left: 2 });
       }
       if (id === 'diamond') {
@@ -364,13 +431,21 @@
       }
       n.ep = null;
       n.half = 0;
-      finishTurn(n, c, id === 'kiss');
+      finishTurn(n, c, id === 'kiss', id === 'sticky' ? target : null);
+      resolveWonder(n, c, true, victims);
       return n;
     }
     function signature(p) {
       const board = Object.entries(p.units)
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([sq, u]) => [sq, u.color, u.type, u.walk || '', u.home || '']);
+        .map(([sq, u]) => [
+          sq,
+          u.color,
+          u.type,
+          u.walk || '',
+          u.home || '',
+          ...(u.transparent ? [u.transparent] : []),
+        ]);
       const ep = p.ep && legal(p).some((m) => m.flags === 'e') ? p.ep : null;
       return [
         board,
@@ -383,6 +458,7 @@
         p.fallen,
         p.stands,
         p.tower,
+        ...(p.wonder?.w || p.wonder?.b ? [p.wonder] : []),
       ];
     }
     function changeSide(p, side) {
@@ -395,14 +471,21 @@
       };
     }
     class ExtendedGame {
-      constructor(fenText, mana = 0, stands, tower) {
-        const base = new Base(fenText, Math.min(100, mana), stands, tower);
+      constructor(fenText, mana = 0, stands, tower, towerRadius) {
+        const base = new Base(
+          fenText,
+          Math.min(100, mana),
+          stands,
+          tower,
+          towerRadius,
+        );
         const s = (this.state = base.state),
           fields = s.fen.split(' ');
         const p = (s.position = {
           units: {},
           stands: s.stands,
           tower: s.tower,
+          towerRadius: s.towerRadius,
           side: fields[1],
           rights: fields[2].replace('-', ''),
           ep: fields[3] === '-' ? null : fields[3],
@@ -410,6 +493,7 @@
           full: +fields[5],
           locked: { w: null, b: null },
           snared: { w: false, b: false },
+          wonder: { w: 0, b: 0 },
           links: [],
           fallen: [],
         });
@@ -448,6 +532,10 @@
           throw Error('Повреждённая позиция');
         const g = Object.create(this.prototype);
         g.state = copy(data);
+        g.state.towerRadius ??= g.state.tower ? 3 : 1;
+        g.state.position.towerRadius = g.state.towerRadius;
+        if (g.state.lastMove?.previous)
+          g.state.lastMove.previous.towerRadius = g.state.towerRadius;
         g.attach();
         return g;
       }
@@ -456,7 +544,9 @@
       }
       towerOccupants() {
         return this.p.tower
-          ? Object.keys(this.p.units).filter((s) => inTower(this.p.tower, s))
+          ? Object.keys(this.p.units).filter((s) =>
+              inTower(this.p.tower, s, this.p.towerRadius),
+            )
           : [];
       }
       choices(c) {
@@ -502,33 +592,46 @@
           validPosition(l.previous, c)
         );
       }
-      canMerge(c) {
+      mergedPosition(c, victims) {
         const n = branch(this.p),
           l = n.links.find((l) => l.owner === c);
-        if (!l) return false;
+        if (!l) return null;
         merge(n, l);
+        // A free merge can reveal a checking line even between turns.
+        if (n.wonder[other(c)] && !check(this.p, other(c)))
+          resolveWonder(n, c, false, victims);
+        return n;
+      }
+      canMerge(c) {
+        const n = this.mergedPosition(c);
+        if (!n) return false;
         if (validPosition(n, c)) return true;
         return (
           c === n.side &&
           check(this.p, c) &&
-          (!n.tower || Object.keys(n.units).some((s) => inTower(n.tower, s))) &&
+          (!n.tower ||
+            Object.keys(n.units).some((s) =>
+              inTower(n.tower, s, n.towerRadius),
+            )) &&
           !!legal(n, null, true).length
         );
       }
       merge(c) {
         if (this.result() || !this.canMerge(c)) return false;
-        const n = branch(this.p),
-          l = n.links.find((l) => l.owner === c);
-        merge(n, l);
+        const victims = [],
+          n = this.mergedPosition(c, victims),
+          l = this.p.links.find((l) => l.owner === c);
         this.state.position = n;
-        this.state.events.push({
+        const event = {
           kind: 'merge',
           stand: 'kiss',
           color: c,
           text: 'Kiss',
           detail: 'Наклейка снята',
           target: l.original,
-        });
+        };
+        addCalamity(event, victims);
+        this.state.events.push(event);
         this.record();
         return true;
       }
@@ -545,15 +648,11 @@
             ((this.canRewind(c) &&
               legal(changeSide(s.lastMove.previous, c), null, true).length) ||
               (s.mana[c] >= cap(p, c) &&
-                ['gold', 'heaven', 'diamond', 'kiss'].includes(id) &&
+                ['gold', 'heaven', 'diamond', 'kiss', 'sticky'].includes(id) &&
                 this.choices(c).length));
           let mergeEscape = false;
           if (this.canMerge(c)) {
-            const n = branch(p);
-            merge(
-              n,
-              n.links.find((l) => l.owner === c),
-            );
+            const n = this.mergedPosition(c);
             mergeEscape = !!legal(n, null, true).length;
           }
           if (!safePower && !mergeEscape)
@@ -589,7 +688,9 @@
         if (this.turn() !== c) return 'В свой ход';
         if (id === 'crimson' && !this.canRewind(c)) return 'Нельзя стереть ход';
         if (
-          ['gold', 'heaven', 'kiss', 'diamond', 'echoes'].includes(id) &&
+          ['gold', 'heaven', 'kiss', 'diamond', 'echoes', 'sticky'].includes(
+            id,
+          ) &&
           !this.choices(c).length
         )
           return 'Нет доступной цели';
@@ -617,7 +718,11 @@
           s.lastMove = null;
           s.positions.pop();
         } else if (id === 'world') s.freeze = 2;
-        else if (id === 'enigma') {
+        else if (id === 'wonder') {
+          s.position = branch(p);
+          s.position.wonder[c] = 3;
+          event.detail = 'Защита на три хода соперника';
+        } else if (id === 'enigma') {
           s.position = branch(p);
           s.position.snared[other(c)] = true;
           event.detail = 'Ловушка на следующий ход';
@@ -626,7 +731,9 @@
             (o) => o.target === target && o.choice === choice,
           );
           if (!opt) return false;
-          s.position = applyChoice(p, c, opt);
+          const victims = [];
+          s.position = applyChoice(p, c, opt, victims);
+          addCalamity(event, victims);
           event.piece = s.position.units[target]?.type;
           event.detail = target + (choice ? ' → ' + choice : '');
           if (id !== 'echoes')
@@ -655,7 +762,9 @@
         const p = this.p,
           s = this.state,
           c = p.side,
-          n = simulate(p, m);
+          victims = [],
+          n = simulate(p, m, victims);
+        addCalamity(m, victims);
         if (m.shot && p.units[from].walk) m.walk = p.units[from].walk;
         s.position = n;
         if (s.freeze) {
@@ -716,9 +825,10 @@
       }
     }
     class Match extends Base {
-      constructor(fen, mana, stands, tower) {
-        if (advanced(stands)) return new ExtendedGame(fen, mana, stands, tower);
-        super(fen, mana, stands, tower);
+      constructor(fen, mana, stands, tower, towerRadius) {
+        if (advanced(stands))
+          return new ExtendedGame(fen, mana, stands, tower, towerRadius);
+        super(fen, mana, stands, tower, towerRadius);
       }
       static restore(data) {
         return advanced(data?.stands)
