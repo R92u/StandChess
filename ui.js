@@ -116,12 +116,88 @@
   const invitedRoom = () =>
     /^[0-9a-f]{24}$/.test(roomParam() || '') ? roomParam() : null;
   let enteringRoom = false;
+  let review = null;
+  const displayed = () => review || game;
+  function replayStart() {
+    const s = game.state,
+      key = s.positions[0];
+    let fen = s.startFen,
+      mana;
+    if (s.position) {
+      const [[units, side, rights, ep], banks] = JSON.parse(key);
+      if (!fen) {
+        const pieces = new Map(
+          units.map(([sq, c, t]) => [sq, c === 'w' ? t.toUpperCase() : t]),
+        );
+        const rows = [...'87654321'].map((r) =>
+          [...'abcdefgh']
+            .map((f) => pieces.get(f + r) || '1')
+            .join('')
+            .replace(/1+/g, (m) => m.length),
+        );
+        fen = [rows.join('/'), side, rights || '-', ep || '-', 0, 1].join(' ');
+      }
+      mana = Math.max(banks.w, banks.b);
+    } else {
+      const [position, w] = key.split('|');
+      fen ||= position + ' 0 1';
+      mana = Number(w);
+    }
+    return new StandGame(fen, mana, s.stands, s.tower);
+  }
+  function seek(index) {
+    const events = game.state.events;
+    resetSelection();
+    stopAudio();
+    window.StandEffects.stop();
+    if (index >= events.length) review = null;
+    else {
+      const replay =
+        review && review.state.events.length <= index ? review : replayStart();
+      for (const e of events.slice(replay.state.events.length, index)) {
+        let ok;
+        if (e.kind === 'move')
+          ok = replay.move(
+            e.from,
+            e.to,
+            e.promotion || e.san?.match(/=([QRBN])/i)?.[1].toLowerCase(),
+          );
+        else if (e.kind === 'ability')
+          ok = replay.activate(e.color, e.target, e.choice);
+        else if (e.kind === 'merge') ok = replay.merge(e.color);
+        else if (e.kind === 'debug') ok = replay.recharge();
+        if (!ok) {
+          review = null;
+          render();
+          toast('Не удалось восстановить этот ход');
+          return;
+        }
+      }
+      review = replay;
+    }
+    render();
+  }
+  $('replay-first').onclick = () => seek(0);
+  $('replay-prev').onclick = () =>
+    seek(Math.max(0, displayed().state.events.length - 1));
+  $('replay-next').onclick = () => seek(displayed().state.events.length + 1);
+  $('replay-last').onclick = () => seek(game.state.events.length);
+  function renderReplay() {
+    const end = game.state.events.length,
+      index = displayed().state.events.length;
+    $('replay-first').disabled = $('replay-prev').disabled = index === 0;
+    $('replay-last').disabled = $('replay-next').disabled = !review;
+    $('replay-status').textContent = review
+      ? 'Просмотр · ' + index + ' / ' + end
+      : 'Текущая позиция';
+  }
   const mayPlay = () =>
-    !online.id ||
-    (online.ready &&
-      online.connected &&
-      !online.busy &&
-      online.side === game.turn());
+    !review &&
+    (!online.id ||
+      (online.ready &&
+        online.connected &&
+        !online.busy &&
+        online.side === game.turn()));
   const stone = (color) =>
     '<span class="side-stone ' +
     (color === 'w' ? 'white' : 'black') +
@@ -189,12 +265,13 @@
     }
   }
   function changed() {
+    review = null;
     resetSelection();
     if (!debug && !online.id)
       storage.write('match', JSON.stringify(game.snapshot()));
     render();
   }
-  function renderBoard() {
+  function renderBoard(game = displayed()) {
     const hasRoom = Object.values(game.state.stands).includes('house');
     const files = [...(hasRoom ? 'abcdefghi' : 'abcdefgh')];
     if (flipped) files.reverse();
@@ -453,7 +530,7 @@
     btn.setAttribute('aria-label', sound ? 'Выключить звук' : 'Включить звук');
     btn.title = btn.getAttribute('aria-label');
   }
-  function renderPlayers() {
+  function renderPlayers(game = displayed()) {
     const ended = Boolean(game.result());
     const colors = flipped ? ['w', 'b'] : ['b', 'w'];
     for (const [index, side] of colors.entries()) {
@@ -482,7 +559,8 @@
       }
     }
   }
-  function render() {
+  function render(game = displayed()) {
+    renderReplay();
     renderBoard();
     renderPlayers();
     renderLog();
@@ -499,7 +577,8 @@
           : (color === 'w' ? 'Ход белых' : 'Ход чёрных') + ' · второй ход'
         : (check ? 'Шах · ' : '') +
           (color === 'w' ? 'Ход белых' : 'Ход чёрных'));
-    if (online.id && !result) {
+    if (review) turnLabel = 'Просмотр · ' + turnLabel;
+    else if (online.id && !result) {
       if (!online.connected) turnLabel = 'Восстанавливаем связь…';
       else if (!online.ready) turnLabel = 'Ожидаем друга';
       else turnLabel += online.side === color ? ' · ваш ход' : ' · ход друга';
@@ -537,6 +616,7 @@
       const mergeButton = $('merge-' + side);
       mergeButton.hidden = !s.position?.links.some((l) => l.owner === side);
       mergeButton.disabled =
+        !!review ||
         !!result ||
         (online.id &&
           (online.side !== side || online.busy || !online.connected)) ||
@@ -1047,6 +1127,7 @@
     if (!$('online').open) $('online').showModal();
   }
   function restoreLocalRoom() {
+    review = null;
     online.reset();
     history.replaceState(null, '', roomURL(null));
     game = mainGame;
@@ -1069,6 +1150,7 @@
     const previous = game.state;
     game = StandGame.restore(data.state);
     if (first) {
+      review = null;
       flipped = data.side === 'b';
       showTowerZone = true;
       history.replaceState(null, '', roomURL(online.id));
@@ -1076,7 +1158,7 @@
     }
     resetSelection();
     render();
-    if (!first) {
+    if (!first && !review) {
       let effect = null,
         target = null,
         expected = null;
@@ -1221,6 +1303,7 @@
     ($('scenario-preview').textContent = scenarios[$('scenario').value].hint);
   $('scenario').onchange();
   $('debug-open').onclick = () => {
+    if (review) seek(game.state.events.length);
     if (!debug) {
       game = StandGame.restore(mainGame.snapshot());
       debug = true;
@@ -1289,6 +1372,7 @@
       else playStand({ w: 'crimson', b: 'world', resume: 'resume' }[color]);
     };
   $('exit-debug').onclick = () => {
+    review = null;
     window.StandEffects.stop();
     debug = false;
     game = mainGame;

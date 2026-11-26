@@ -167,6 +167,7 @@
       if (!Object.values(selected).every((id) => Object.hasOwn(STANDS, id)))
         throw new Error('Неизвестный стенд');
       this.state = {
+        startFen: fen,
         fen,
         stands: selected,
         tower: Object.values(selected).includes('superfly')

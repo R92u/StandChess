@@ -1899,3 +1899,22 @@ dialog .field-hint {
     linear-gradient(#000 0 0);
   mask-composite: exclude;
 }
+.replay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+.replay button {
+  min-width: 36px;
+  min-height: 32px;
+}
+.replay button:disabled {
+  opacity: 0.42;
+}
+#replay-status {
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}

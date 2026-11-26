@@ -67,7 +67,9 @@
             </header>
             <div class="board-shell">
               <div class="player-row" id="player-top"></div>
-              <button type="button" class="tool-button" id="leave-match" hidden>Выйти из онлайн-игры</button>
+              <button type="button" class="tool-button" id="leave-match" hidden>
+                Выйти из онлайн-игры
+              </button>
               <p id="target-hint" role="status" hidden></p>
               <div class="board-rim">
                 <div class="board-stage">
@@ -98,6 +100,31 @@
                 </button>
               </div>
             </div>
+            <nav class="replay" aria-label="Просмотр ходов">
+              <button
+                id="replay-first"
+                class="tool-button"
+                aria-label="В начало партии"
+              >
+                «
+              </button>
+              <button
+                id="replay-prev"
+                class="tool-button"
+                aria-label="Предыдущий ход"
+              >
+                ‹
+              </button>
+              <span id="replay-status" aria-live="polite"></span>
+              <button
+                id="replay-next"
+                class="tool-button"
+                aria-label="Следующий ход"
+              >
+                ›
+              </button>
+              <button id="replay-last" class="tool-button">К последнему</button>
+            </nav>
           </section>
           <aside class="sidebar" aria-label="Стенды и журнал партии">
             <section class="stand-panel glass" aria-labelledby="stands-title">
