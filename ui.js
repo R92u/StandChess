@@ -153,7 +153,14 @@
       fen ||= position + ' 0 1';
       mana = Number(w);
     }
-    return new StandGame(fen, mana, s.stands, s.tower, s.towerRadius);
+    return new StandGame(
+      fen,
+      mana,
+      s.stands,
+      s.tower,
+      s.towerRadius,
+      s.stickyRulesFrom > 0 ? 1 : 2,
+    );
   }
   function seek(index) {
     const events = game.state.events;
@@ -165,6 +172,12 @@
       const replay =
         review && review.state.events.length <= index ? review : replayStart();
       for (const e of events.slice(replay.state.events.length, index)) {
+        // Old games can have recorded moves or captures of transparent pieces.
+        if (
+          replay.state.position?.stickyRules === 1 &&
+          replay.state.events.length === game.state.stickyRulesFrom
+        )
+          replay.useCurrentStickyRules();
         let ok;
         if (e.kind === 'move')
           ok = replay.move(
@@ -285,6 +298,13 @@
       storage.write('match', JSON.stringify(game.snapshot()));
     render();
   }
+  function selectablePiece(game, square, piece) {
+    return (
+      piece?.color === game.turn() &&
+      (!piece.transparent || game.state.position?.stickyRules === 1) &&
+      game.state.locked[piece.color] !== square
+    );
+  }
   function renderBoard(game = displayed()) {
     const hasRoom = Object.values(game.state.stands).includes('house');
     const files = [...(hasRoom ? 'abcdefghi' : 'abcdefgh')];
@@ -390,11 +410,14 @@
         const transparency = piece?.transparent;
         const transparencyLabel = transparency
           ? 'Sticky Fingers · ' +
-            sides[transparency.caster] +
-            ': ещё ' +
+            (game.state.position?.stickyRules === 1
+              ? 'фигура может ходить, и её можно взять.'
+              : 'фигура неподвижна, защищена от взятия и не даёт шах.') +
+            ' Сквозь неё можно пройти. Осталось ' +
             transparency.turns +
             ' ' +
-            plural(transparency.turns, 'ход', 'хода', 'ходов')
+            plural(transparency.turns, 'ход', 'хода', 'ходов') +
+            (transparency.caster === 'w' ? ' белых.' : ' чёрных.')
           : '';
         const label =
           square +
@@ -414,7 +437,7 @@
         if (file === 'i') cell.append(node('span', 'coord rank', square));
         if (rank === ranks[7]) cell.append(node('span', 'coord file', file));
         if (piece) {
-          if (playing && !targeting && !locked && piece.color === game.turn())
+          if (playing && !targeting && selectablePiece(game, square, piece))
             cell.classList.add('movable');
           const img = document.createElement('img');
           if (transparency) {
@@ -548,7 +571,21 @@
             e.text,
           ),
         );
-        if (e.detail) row.append(node('span', 'detail', e.detail));
+        if (e.stand === 'sticky') {
+          const duration =
+            e.color === 'w' ? 'два хода белых' : 'два хода чёрных';
+          row.append(
+            node(
+              'span',
+              'detail',
+              (pieces[e.piece] || 'фигура') +
+                ' ' +
+                e.target +
+                ' · прозрачность на ' +
+                duration,
+            ),
+          );
+        } else if (e.detail) row.append(node('span', 'detail', e.detail));
       }
       for (const hit of e.calamity || []) {
         const accident = [
@@ -765,7 +802,7 @@
           : 'Выберите свою фигуру для копирования.',
         heaven: 'Выберите фигуру в радиусе трёх клеток от своего короля.',
         sticky:
-          'Выберите свою или чужую фигуру, кроме короля. Активация завершит ход.',
+          'Выберите свою или чужую фигуру, кроме короля. Она станет прозрачной и неподвижной. Активация завершит ход.',
       }[s.stands[targeting]];
   }
   function makeMove(from, to, promotion) {
@@ -860,8 +897,7 @@
     }
     if (
       selected !== square &&
-      game.chess.get(square)?.color === game.turn() &&
-      game.state.locked[game.turn()] !== square
+      selectablePiece(game, square, game.chess.get(square))
     ) {
       selected = square;
       candidates = game.moves(square);

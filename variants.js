@@ -54,6 +54,10 @@
         p.stands[piece.color] === 'house' &&
         piece.type !== 'k');
     const cap = (p, c) => STANDS[p.stands[c]].cost || 100;
+    // Earlier games allowed a transparent piece to move, attack and be taken.
+    // Only the historical viewer can request that ruleset.
+    const frozenBySticky = (p, piece) =>
+      p.stickyRules === 2 && !!piece?.transparent;
     function branch(p) {
       return {
         ...p,
@@ -98,12 +102,15 @@
         moves = [],
         kind = u.walk || u.type,
         dir = u.color === 'w' ? 1 : -1;
+      if (frozenBySticky(p, u)) return moves;
       function add(to, flags = 'n', death) {
         const victim = p.units[death || to];
         if (
           !attacks &&
           victim &&
-          (victim.color === u.color || victim.type === 'k')
+          (victim.color === u.color ||
+            victim.type === 'k' ||
+            frozenBySticky(p, victim))
         )
           return;
         const m = {
@@ -207,6 +214,7 @@
           rook?.type !== 'r' ||
           rook.color !== c ||
           rook.walk ||
+          frozenBySticky(p, rook) ||
           p.locked[c] === rk
         )
           continue;
@@ -471,7 +479,14 @@
       };
     }
     class ExtendedGame {
-      constructor(fenText, mana = 0, stands, tower, towerRadius) {
+      constructor(
+        fenText,
+        mana = 0,
+        stands,
+        tower,
+        towerRadius,
+        stickyRules = 2,
+      ) {
         const base = new Base(
           fenText,
           Math.min(100, mana),
@@ -497,6 +512,10 @@
           links: [],
           fallen: [],
         });
+        if (Object.values(s.stands).includes('sticky')) {
+          p.stickyRules = stickyRules;
+          s.stickyRulesFrom = 0;
+        }
         for (const sq of standard) {
           const u = base.chess.get(sq);
           if (u) p.units[sq] = { ...u, ...(s.homes[sq] ? { home: sq } : {}) };
@@ -537,7 +556,17 @@
         if (g.state.lastMove?.previous)
           g.state.lastMove.previous.towerRadius = g.state.towerRadius;
         g.attach();
+        if (Object.values(g.p.stands).includes('sticky')) {
+          g.state.stickyRulesFrom ??= g.state.events.length;
+          g.useCurrentStickyRules();
+        }
         return g;
+      }
+      useCurrentStickyRules() {
+        this.p.stickyRules = 2;
+        if (this.state.lastMove?.previous)
+          this.state.lastMove.previous.stickyRules = 2;
+        this.cache.clear();
       }
       moves(sq) {
         return legal(this.p, sq);
@@ -825,9 +854,16 @@
       }
     }
     class Match extends Base {
-      constructor(fen, mana, stands, tower, towerRadius) {
+      constructor(fen, mana, stands, tower, towerRadius, stickyRules) {
         if (advanced(stands))
-          return new ExtendedGame(fen, mana, stands, tower, towerRadius);
+          return new ExtendedGame(
+            fen,
+            mana,
+            stands,
+            tower,
+            towerRadius,
+            stickyRules,
+          );
         super(fen, mana, stands, tower, towerRadius);
       }
       static restore(data) {
