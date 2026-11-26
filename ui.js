@@ -392,7 +392,10 @@
             cell.classList.add('movable');
           const img = document.createElement('img');
           img.src =
-            'assets/pieces/' + piece.color + piece.type.toUpperCase() + '.svg';
+            'assets/pieces/' +
+            piece.color +
+            (piece.walk || piece.type).toUpperCase() +
+            '.svg';
           img.alt = '';
           img.draggable = false;
           cell.append(img);
@@ -416,9 +419,14 @@
             const badge = node(
               'span',
               'walk-badge',
-              { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' }[piece.walk],
+              { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' }[piece.type],
             );
-            badge.title = 'Ходит как ' + pieces[piece.walk];
+            badge.title =
+              'Исходная фигура — ' +
+              pieces[piece.type] +
+              '. Ходит как ' +
+              pieces[piece.walk];
+            cell.title = badge.title;
             cell.append(badge);
             cell.setAttribute(
               'aria-label',
@@ -713,7 +721,10 @@
     moveSound(move.captured);
     changed();
     if (move.shot)
-      playStand('shot', to, { type: move.piece, color: move.color });
+      playStand('shot', to, {
+        type: move.walk || move.piece,
+        color: move.color,
+      });
     else if (to[0] === 'i') playStand('house', to);
     if (wasFrozen && (!game.state.freeze || game.result()))
       window.StandEffects.play('resume', sound);
@@ -1188,7 +1199,7 @@
           if (event.shot) {
             effect = 'shot';
             target = event.to;
-            expected = { color: event.color, type: event.piece };
+            expected = { color: event.color, type: event.walk || event.piece };
           } else if (event.to?.[0] === 'i') {
             effect = 'house';
             target = event.to;

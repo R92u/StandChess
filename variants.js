@@ -656,6 +656,7 @@
           s = this.state,
           c = p.side,
           n = simulate(p, m);
+        if (m.shot && p.units[from].walk) m.walk = p.units[from].walk;
         s.position = n;
         if (s.freeze) {
           s.freeze--;
