@@ -2,7 +2,26 @@
   'use strict';
   const layer = document.getElementById('stand-fx'),
     board = document.getElementById('board');
+  const dial =
+    '<g class="dust-dial" stroke="#ffe2a1"><circle cx="50" cy="50" r="37" fill="#331b49" fill-opacity=".72"/><circle cx="50" cy="50" r="34" fill="none" stroke="#d475b4"/>' +
+    Array.from(
+      { length: 12 },
+      (_, i) => '<path d="M50 18v5" transform="rotate(' + i * 30 + ' 50 50)"/>',
+    ).join('') +
+    '<g class="dust-hands"><path d="M50 26v24l16 8" stroke-width="3" fill="none"/><circle cx="50" cy="50" r="3" fill="#fff1bb"/></g></g>';
+  const burst =
+    '<g class="dust-burst" fill="none"><circle cx="50" cy="50" r="26" stroke="#ffa6ce" stroke-width="4"/><circle cx="50" cy="50" r="33" stroke="#ffdc84"/>' +
+    Array.from(
+      { length: 18 },
+      (_, i) =>
+        '<path d="M50 18l2 -11 -3 5" transform="rotate(' +
+        i * 20 +
+        ' 50 50)" fill="#ffe8b5" stroke="#f598c3"/>',
+    ).join('') +
+    '</g>';
   const marks = {
+    dust: dial,
+    detonate: dial + burst,
     sticky:
       '<g class="zip-opening"><path d="M33 79Q39 56 48 45T68 18Q60 43 53 54T33 79Z" fill="#183447" stroke="#83c6d4"/><path d="M32 80Q39 55 48 44T67 17M34 81Q47 68 54 53T69 18" fill="none" stroke="#f2cf72" stroke-width="4" stroke-dasharray="2 4"/></g>' +
       '<g class="zip-slider" stroke="#573f26"><rect x="44" y="41" width="12" height="13" rx="3" fill="#ecc463" transform="rotate(30 50 48)"/><path d="m49 49-9 13a3 3 0 0 0 5 3l8-14z" fill="#ffdf89"/><path d="m46 57-3 5" stroke="#846431" stroke-width="1.5"/></g>',
@@ -33,6 +52,8 @@
     timer;
   function stop() {
     clearTimeout(timer);
+    board.classList.remove('dust-rewind');
+    board.querySelector('.dust-bait')?.classList.remove('dust-bait');
     for (const effect of active)
       if (effect.node !== layer) effect.node.remove();
     active = [];
@@ -48,6 +69,18 @@
       const cell = board.querySelector('[data-square="' + square + '"]');
       node.hidden = !cell;
       if (!cell) continue;
+      if (node.dataset.effect === 'detonate') {
+        cell.classList.add('dust-bait');
+        const origin = board.querySelector(
+          '[data-square="' + node.dataset.from + '"]',
+        );
+        if (origin) {
+          const a = origin.getBoundingClientRect(),
+            b = cell.getBoundingClientRect();
+          node.style.setProperty('--dust-x', a.left - b.left + 'px');
+          node.style.setProperty('--dust-y', a.top - b.top + 'px');
+        }
+      }
       const rect = cell.getBoundingClientRect();
       node.style.left =
         ((rect.left - base.left + rect.width / 2) / base.width) * 100 + '%';
@@ -74,13 +107,18 @@
       graphic +
       '</svg>';
     if (
-      (id === 'shot' || id === 'calamity') &&
+      (id === 'shot' || id === 'calamity' || id === 'detonate') &&
       victim &&
       /^[wb]$/.test(victim.color) &&
       /^[pnbrqk]$/.test(victim.type)
     ) {
       const img = document.createElement('img');
-      img.className = id === 'shot' ? 'shot-victim' : 'calamity-victim';
+      img.className =
+        id === 'detonate'
+          ? 'dust-attacker'
+          : id === 'shot'
+            ? 'shot-victim'
+            : 'calamity-victim';
       img.alt = '';
       img.src =
         'assets/pieces/' + victim.color + victim.type.toUpperCase() + '.svg';
@@ -108,15 +146,21 @@
     if (id === 'calamity') return playCalamities([{ ...victim, square }]);
     stop();
     if (!marks[id]) return;
+    if (id === 'detonate') {
+      board.classList.add('dust-rewind');
+      layer.dataset.from = victim?.from || square;
+    }
     draw(layer, id, square, victim);
     sync();
     timer = setTimeout(
       stop,
       matchMedia('(prefers-reduced-motion:reduce)').matches
         ? 400
-        : id === 'shot'
-          ? 1450
-          : 1250,
+        : id === 'detonate'
+          ? 1850
+          : id === 'shot'
+            ? 1450
+            : 1250,
     );
   }
   window.addEventListener('pagehide', stop);

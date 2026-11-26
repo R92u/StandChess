@@ -24,12 +24,16 @@ window.StandRoom = class StandRoom {
       return null;
     }
   }
-  async request(id, key, op, body, since) {
+  async request(id, key, op, body, since, at) {
     const url =
       '/api/rooms/' +
       id +
       (op ? '/' + op : '') +
-      (since === undefined ? '' : '?since=' + since);
+      (at !== undefined
+        ? '?at=' + at
+        : since === undefined
+          ? ''
+          : '?since=' + since);
     const headers = { Authorization: 'Bearer ' + key };
     if (body) headers['Content-Type'] = 'application/json';
     const response = await fetch(url, {

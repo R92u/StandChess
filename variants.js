@@ -41,6 +41,7 @@
           'heaven',
           'house',
           'wonder',
+          'dust',
           'sticky',
         ].includes(id),
       );
@@ -295,6 +296,11 @@
                 : undefined,
           };
         }
+      if (p.stands[other(c)] === 'dust') {
+        for (const [sq, u] of Object.entries(p.units))
+          if (u.color !== c && u.dust)
+            p.units[sq] = { ...u, dust: u.dust > 1 ? u.dust - 1 : undefined };
+      }
       p.side = other(c);
       if (c === 'b') p.full++;
     }
@@ -335,7 +341,17 @@
       const n = branch(p),
         u = n.units[m.from],
         c = u.color;
-      if (m.death) remove(n, m.death);
+      const bait = n.units[m.death];
+      if (bait?.dust && u.type !== 'k') {
+        m.detonation = {
+          square: m.death,
+          from: m.from,
+          type: u.walk || u.type,
+          color: c,
+        };
+        n.units[m.death] = { ...bait, dust: undefined };
+        remove(n, m.from);
+      } else if (m.death) remove(n, m.death);
       // A capture may destroy the moving piece through a Kiss link.
       if (n.units[m.from]) {
         slide(n, m.from, m.to);
@@ -379,6 +395,8 @@
           .filter((f) => f.color === c && !p.units[f.home])
           .map((f) => ({ target: f.home }));
       for (const [sq, u] of Object.entries(p.units)) {
+        if (id === 'dust' && u.color === c && u.type !== 'k')
+          list.push({ target: sq });
         if (id === 'sticky' && u.type !== 'k') list.push({ target: sq });
         if (id === 'echoes' && u.color !== c && u.type !== 'k')
           list.push({ target: sq });
@@ -413,6 +431,13 @@
       const n = branch(p),
         id = p.stands[c],
         u = n.units[target];
+      if (id === 'dust') {
+        for (const [sq, piece] of Object.entries(n.units))
+          if (piece.color === c && piece.dust)
+            n.units[sq] = { ...piece, dust: undefined };
+        n.units[target] = { ...u, dust: 3 };
+        return n;
+      }
       if (id === 'echoes') {
         n.locked[other(c)] = target;
         return n;
@@ -427,7 +452,12 @@
           walk: choice === u.type ? undefined : choice,
         };
       if (id === 'kiss') {
-        n.units[choice] = { ...u, home: undefined, transparent: undefined };
+        n.units[choice] = {
+          ...u,
+          home: undefined,
+          transparent: undefined,
+          dust: undefined,
+        };
         n.links.push({ original: target, clone: choice, owner: c, left: 2 });
       }
       if (id === 'diamond') {
@@ -453,6 +483,7 @@
           u.walk || '',
           u.home || '',
           ...(u.transparent ? [u.transparent] : []),
+          ...(u.dust ? [{ dust: u.dust }] : []),
         ]);
       const ep = p.ep && legal(p).some((m) => m.flags === 'e') ? p.ep : null;
       return [
@@ -569,6 +600,8 @@
         this.cache.clear();
       }
       moves(sq) {
+        if (this.state.legalMoves)
+          return this.state.legalMoves.filter((m) => !sq || m.from === sq);
         return legal(this.p, sq);
       }
       towerOccupants() {
@@ -584,7 +617,7 @@
             c,
             options(this.p, c).filter(
               (o) =>
-                this.p.stands[c] === 'echoes' ||
+                ['echoes', 'dust'].includes(this.p.stands[c]) ||
                 validPosition(applyChoice(this.p, c, o), c),
             ),
           );
@@ -665,6 +698,7 @@
         return true;
       }
       result() {
+        if (this.state.verdict !== undefined) return this.state.verdict;
         if (this.cache.has('result')) return this.cache.get('result');
         const p = this.p,
           s = this.state,
@@ -717,9 +751,15 @@
         if (this.turn() !== c) return 'В свой ход';
         if (id === 'crimson' && !this.canRewind(c)) return 'Нельзя стереть ход';
         if (
-          ['gold', 'heaven', 'kiss', 'diamond', 'echoes', 'sticky'].includes(
-            id,
-          ) &&
+          [
+            'gold',
+            'heaven',
+            'kiss',
+            'diamond',
+            'echoes',
+            'sticky',
+            'dust',
+          ].includes(id) &&
           !this.choices(c).length
         )
           return 'Нет доступной цели';
@@ -764,8 +804,11 @@
           s.position = applyChoice(p, c, opt, victims);
           addCalamity(event, victims);
           event.piece = s.position.units[target]?.type;
-          event.detail = target + (choice ? ' → ' + choice : '');
-          if (id !== 'echoes')
+          event.detail =
+            id === 'dust'
+              ? 'Третья бомба взведена'
+              : target + (choice ? ' → ' + choice : '');
+          if (!['echoes', 'dust'].includes(id))
             s.lastMove = {
               previous: p,
               before: fen(p),

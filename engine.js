@@ -9,6 +9,16 @@
   const MOVE_MANA = 10;
   const DEFAULT_STANDS = { w: 'crimson', b: 'world' };
   const STANDS = {
+    dust: {
+      name: 'Bites the Dust',
+      user: 'Ёсикагэ Кира',
+      art: 'dust',
+      icon: 'clock',
+      power: 'Третья бомба',
+      action: 'Заложить бомбу',
+      description:
+        'Тайно пометьте свою фигуру, кроме короля, перед ходом. Три хода соперника взятие возвращает носителя и уничтожает атакующего. Король обезвреживает метку взятием.',
+    },
     sticky: {
       name: 'Sticky Fingers',
       user: 'Бруно',
@@ -638,6 +648,13 @@
     }
   }
   const scenarios = {
+    dust: {
+      label: 'Bites the Dust · петля времени',
+      stands: { w: 'dust' },
+      mana: 100,
+      fen: 'k7/8/8/8/3r4/8/P2R4/6K1 w - - 0 1',
+      hint: 'Пометьте белую ладью d2, сыграйте a2–a3, затем чёрной ладьёй d4 возьмите d2.',
+    },
     sticky: {
       label: 'Sticky Fingers · прозрачная фигура',
       stands: { w: 'sticky' },

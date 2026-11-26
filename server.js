@@ -30,13 +30,48 @@ async function readAction(req) {
   }
   return body ? JSON.parse(body) : {};
 }
-function roomState(room, side) {
-  return {
-    side,
-    ready: Boolean(room.b),
-    version: room.version,
-    state: room.game.snapshot(),
+// Retain the board at each ply so either seat can review a hidden-information game.
+function rememberDustPosition(room) {
+  const game = room.game,
+    s = game.state;
+  if (!Object.values(s.stands).includes('dust')) return;
+  room.frames ??= [];
+  room.frames[s.events.length] = {
+    position: s.position,
+    fen: s.fen,
+    mana: { ...s.mana },
+    freeze: s.freeze,
+    locked: { ...s.locked },
+    fallen: s.fallen,
+    lastMove: s.lastMove,
+    verdict: game.result(),
   };
+}
+function roomState(room, side, index) {
+  const game = room.game,
+    state = game.snapshot();
+  if (room.frames) {
+    if (index !== undefined) {
+      Object.assign(state, structuredClone(room.frames[index]));
+      state.events.length = index;
+    } else {
+      state.verdict = game.result();
+      if (game.turn() === side)
+        state.legalMoves = game.moves().map(({ detonation, ...move }) => move);
+    }
+    // Position signatures and backup boards also contain the private target.
+    state.positions = state.positions.slice(0, 1);
+    for (const board of [state.position, state.lastMove?.previous])
+      if (board)
+        for (const unit of Object.values(board.units))
+          if (unit.color !== side) delete unit.dust;
+    for (const event of state.events)
+      if (event.stand === 'dust' && event.color !== side) {
+        delete event.target;
+        delete event.piece;
+      }
+  }
+  return { side, ready: Boolean(room.b), version: room.version, state };
 }
 async function roomApi(req, res, url, id, op) {
   const token = /^Bearer ([0-9a-f]{48})$/.exec(
@@ -69,6 +104,7 @@ async function roomApi(req, res, url, id, op) {
       version: 1,
       seen: Date.now(),
     };
+    rememberDustPosition(room);
     rooms.set(id, room);
   }
   if (!room) return fail(res, 404, 'Комната закрыта. Создайте новую.');
@@ -82,6 +118,7 @@ async function roomApi(req, res, url, id, op) {
       },
       room.game.state.tower,
     );
+    rememberDustPosition(room);
     room.b = token;
     room.version++;
   }
@@ -124,7 +161,14 @@ async function roomApi(req, res, url, id, op) {
       ok = room.game.move(action.from, action.to, action.promotion);
     }
     if (!ok) return fail(res, 422, 'Действие недоступно в этой позиции.');
+    rememberDustPosition(room);
     room.version++;
+  }
+  if (!op && url.searchParams.has('at')) {
+    const i = Number(url.searchParams.get('at'));
+    if (!Number.isInteger(i) || !room.frames?.[i])
+      return fail(res, 400, 'Нет такой позиции');
+    return reply(res, 200, roomState(room, side, i));
   }
   if (!op && url.searchParams.get('since') === String(room.version))
     return reply(res, 204);

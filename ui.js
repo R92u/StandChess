@@ -71,11 +71,18 @@
     'house',
     'superfly',
     'wonder',
+    'dust',
     'sticky',
   ];
   for (const id of extraStands)
     clip[id] = new Audio('assets/audio/' + id + '.mp3');
-  for (const id of ['enigma-shot', 'diavolo', 'world-call', 'calamity'])
+  for (const id of [
+    'enigma-shot',
+    'diavolo',
+    'world-call',
+    'calamity',
+    'dust-trigger',
+  ])
     clip[id] = new Audio('assets/audio/' + id + '.mp3');
   for (const audio of Object.values(clip)) {
     audio.preload = 'auto';
@@ -162,13 +169,32 @@
       s.stickyRulesFrom > 0 ? 1 : 2,
     );
   }
-  function seek(index) {
+  let seekVersion = 0;
+  async function seek(index) {
+    const version = ++seekVersion;
     const events = game.state.events;
     resetSelection();
     stopAudio();
     window.StandEffects.stop();
     if (index >= events.length) review = null;
-    else {
+    else if (online.id && Object.values(game.state.stands).includes('dust')) {
+      const room = online.id;
+      try {
+        const data = await online.request(
+          room,
+          online.key,
+          '',
+          null,
+          undefined,
+          index,
+        );
+        if (version !== seekVersion || room !== online.id) return;
+        review = StandGame.restore(data.state);
+      } catch {
+        if (version === seekVersion) toast('Не удалось загрузить позицию');
+        return;
+      }
+    } else {
       const replay =
         review && review.state.events.length <= index ? review : replayStart();
       for (const e of events.slice(replay.state.events.length, index)) {
@@ -407,6 +433,8 @@
         if (target) cell.classList.add(piece ? 'capture' : 'legal');
         if (inCheck && piece?.type === 'k' && piece.color === game.turn())
           cell.classList.add('check');
+        if (piece?.dust && online.side === piece.color)
+          cell.classList.add('dust-mark');
         const transparency = piece?.transparent;
         const transparencyLabel = transparency
           ? 'Sticky Fingers · ' +
@@ -559,6 +587,9 @@
             e.from +
               ' → ' +
               e.to +
+              (e.detonation
+                ? ' · Bites the Dust уничтожил атакующую фигуру'
+                : '') +
               (e.shot ? ' · Enigma уничтожила фигуру' : '') +
               (e.erased ? ' · стёрт' : ''),
           ),
@@ -801,6 +832,7 @@
           ? 'Выберите соседнюю клетку для копии.'
           : 'Выберите свою фигуру для копирования.',
         heaven: 'Выберите фигуру в радиусе трёх клеток от своего короля.',
+        dust: 'Выберите свою фигуру для тайной метки.',
         sticky:
           'Выберите свою или чужую фигуру, кроме короля. Она станет прозрачной и неподвижной. Активация завершит ход.',
       }[s.stands[targeting]];
@@ -821,6 +853,10 @@
     moveSound(move.captured);
     changed();
     if (playCalamity(game.state.events.at(-1)?.calamity)) return;
+    if (move.detonation) {
+      playStand('detonate', move.detonation.square, move.detonation);
+      return;
+    }
     if (move.shot)
       playStand('shot', to, {
         type: move.walk || move.piece,
@@ -1091,8 +1127,10 @@
       if (id !== 'resume') playClip(id === 'world' ? 'world-call' : 'diavolo');
       return;
     }
-    playClip(id === 'shot' ? 'enigma-shot' : id);
-    if (extraStands.includes(id) || id === 'shot') {
+    playClip(
+      id === 'shot' ? 'enigma-shot' : id === 'detonate' ? 'dust-trigger' : id,
+    );
+    if (extraStands.includes(id) || id === 'shot' || id === 'detonate') {
       window.BoardStandFX.play(
         id,
         target ||
@@ -1115,6 +1153,7 @@
       window.PieceEffects.play(id, target);
   }
   function effectSquare(id, color, target, choice) {
+    if (id === 'dust') return 'e4';
     if (id === 'kiss') return choice;
     if (id === 'wonder')
       return Object.entries(game.state.position.units).find(
@@ -1172,9 +1211,15 @@
       }
       if (game.abilityBlock(color) || !mayPlay()) return;
       if (
-        ['diamond', 'echoes', 'kiss', 'gold', 'heaven', 'sticky'].includes(
-          game.state.stands[color],
-        )
+        [
+          'diamond',
+          'echoes',
+          'kiss',
+          'gold',
+          'heaven',
+          'sticky',
+          'dust',
+        ].includes(game.state.stands[color])
       ) {
         const next = targeting === color ? null : color;
         resetSelection();
@@ -1287,11 +1332,13 @@
     render();
     if (!first && !review) {
       const hits = [];
+      let explosion;
       let effect = null,
         target = null,
         expected = null;
       let frozen = previous.freeze;
       for (const event of data.state.events.slice(previous.events.length)) {
+        if (event.detonation) explosion = event.detonation;
         if (event.calamity) hits.push(...event.calamity);
         if (event.kind === 'ability') {
           effect = game.state.stands[event.color];
@@ -1330,7 +1377,9 @@
         }
       }
       if (frozen && !data.state.freeze) effect = 'resume';
-      if (!playCalamity(hits) && effect) playStand(effect, target, expected);
+      if (explosion) playStand('detonate', explosion.square, explosion);
+      else if (!playCalamity(hits) && effect)
+        playStand(effect, target, expected);
     }
     if (online.ready && (first || data.version === 2) && $('online').open)
       $('online').close();
@@ -1487,7 +1536,9 @@
       const color = el.dataset.preview;
       $('debug').close();
       stopAudio();
-      if (color === 'calamity') {
+      if (color === 'dust')
+        playStand('detonate', 'e4', { type: 'r', color: 'b' });
+      else if (color === 'calamity') {
         const square =
           ['e4', 'd4', 'e5', 'd5'].find((s) => !game.chess.get(s)) || 'e4';
         playCalamity([{ square, type: 'r', color: 'b' }]);
