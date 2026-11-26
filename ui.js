@@ -583,6 +583,7 @@
       meter.style.setProperty('--mana-fill', value / max);
       meter.querySelector('b').textContent = value + ' / ' + max;
     }
+    $('leave-match').hidden = !online.id;
     $('match-type').textContent = online.id
       ? 'Онлайн · вы играете за ' + (online.side === 'w' ? 'белых' : 'чёрных')
       : debug
@@ -1149,11 +1150,14 @@
   }
   $('online-open').onclick = revealRoom;
   $('room-enter').onclick = () => enterRoom(invitedRoom() ? 'join' : 'create');
-  $('room-leave').onclick = () => {
+  function leaveMatch() {
     if (enteringRoom) return;
     $('online').close();
     restoreLocalRoom();
-  };
+    stopAudio();
+  }
+  $('leave-match').onclick = leaveMatch;
+  $('room-leave').onclick = leaveMatch;
   $('invite-copy').onclick = async () => {
     try {
       await navigator.clipboard.writeText($('invite-url').value);
