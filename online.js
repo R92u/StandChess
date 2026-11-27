@@ -1,13 +1,16 @@
 'use strict';
 // The invitation names the room. The private seat key stays in the player's browser.
 window.StandRoom = class StandRoom {
+  static get inAndroidApp() {
+    return navigator.userAgent.includes('StandChessAndroid/');
+  }
   static get backend() {
     return location.origin === 'https://r92u.github.io'
       ? 'https://standchess-r92u.onrender.com'
       : location.origin;
   }
   static invitation(id) {
-    const base = this.backend === 'https://standchess-r92u.onrender.com'
+    const base = this.inAndroidApp && this.backend === 'https://standchess-r92u.onrender.com'
       ? this.backend + '/'
       : new URL(location.pathname, location.origin);
     const url = new URL(base);

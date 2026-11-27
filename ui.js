@@ -1495,7 +1495,7 @@
     $('online-feedback').hidden = !text;
     $('online-feedback').textContent = text;
   }
-  let inviteMode = navigator.userAgent.includes('StandChessAndroid/') ? 'qr' : 'link';
+  let inviteMode = StandRoom.inAndroidApp ? 'qr' : 'link';
   function renderInvitation(id) {
     const link = StandRoom.invitation(id);
     const qr = inviteMode === 'qr';
