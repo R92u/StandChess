@@ -1,14 +1,6 @@
 (() => {
   'use strict';
-  const {
-    StandGame,
-    scenarios,
-    scenario,
-    MAX_MANA,
-    STANDS,
-    DEFAULT_STANDS,
-    inTower,
-  } = window.StandChess;
+  const { StandGame, MAX_MANA, STANDS, inTower } = window.StandChess;
   const $ = (id) => document.getElementById(id);
   const icons = {
     zip: '<path d="M9 2v7m6-7v7M9 3h3m0 2h3M9 7h3m-2 7L5 21m9-7 5 7"/><path d="m9 9 3-2 3 2v3l-3 3-3-3z"/><path d="M12 10v2"/>',
@@ -25,7 +17,6 @@
     sound:
       '<path d="m4 9 4 0 5-4v14l-5-4H4zM16 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>',
     mute: '<path d="m3 9 4 0 5-4v14l-5-4H3zm13 0 5 6m0-6-5 6"/>',
-    bug: '<rect x="7" y="7" width="10" height="14" rx="5"/><path d="m9 6-2-3m8 3 2-3M7 10 4 8m3 6H3m4 3-3 3m13-10 3-2m-3 6h4m-4 3 3 3M8 12h8"/>',
     players:
       '<circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2m1-15a3.1 3.1 0 0 1 0 6m2 3a5.5 5.5 0 0 1 3 5"/>',
     restart: '<path d="M4 4v6h6M4 10a8 8 0 1 1 .8 7"/>',
@@ -112,12 +103,10 @@
     mainGame = new StandGame();
   }
   let game = mainGame,
-    debug = false,
     selected = null,
     candidates = [],
     flipped = storage.read('flipped') === 'yes';
   let sound = storage.read('sound') !== 'off',
-    debugUndo = [],
     promote = null,
     toastTimer,
     synth;
@@ -264,22 +253,11 @@
       audio.currentTime = 0;
     });
   }
-  function playClip(color, preview = false) {
-    if (!sound) {
-      if (preview)
-        $('debug-feedback').textContent =
-          'Звук выключен. Включите его в меню игры.';
-      return;
-    }
+  function playClip(color) {
+    if (!sound) return;
     stopAudio();
-    if (preview)
-      $('debug-feedback').textContent =
-        'Звучит ' + STANDS[DEFAULT_STANDS[color] || color].name;
     clip[color].play().catch((err) => {
-      if (err.name === 'AbortError') return;
-      const msg = 'Не удалось воспроизвести запись.';
-      if (preview) $('debug-feedback').textContent = msg;
-      else toast(msg);
+      if (err.name !== 'AbortError') toast('Не удалось воспроизвести запись.');
     });
   }
   function moveSound(capture) {
@@ -308,17 +286,10 @@
     candidates = [];
     promote = null;
   }
-  function track() {
-    if (debug) {
-      debugUndo.push(game.snapshot());
-      if (debugUndo.length > 48) debugUndo.shift();
-    }
-  }
   function changed() {
     review = null;
     resetSelection();
-    if (!debug && !online.id)
-      storage.write('match', JSON.stringify(game.snapshot()));
+    if (!online.id) storage.write('match', JSON.stringify(game.snapshot()));
     render();
   }
   function selectablePiece(game, square, piece) {
@@ -737,77 +708,194 @@
       }
     }
   }
+  const grades = {
+    Бриллиантовый: ['!!', 'brilliant'],
+    Сильный: ['!', 'great'],
+    Книжный: ['▤', 'book'],
+    Лучший: ['★', 'best'],
+    Отличный: ['✓', 'excellent'],
+    Хороший: ['+', 'good'],
+    Неточность: ['?!', 'inaccuracy'],
+    Ошибка: ['?', 'mistake'],
+    'Упущенный шанс': ['×', 'miss'],
+    Зевок: ['??', 'blunder'],
+    Стёрт: ['↶', 'special'],
+    Ловушка: ['◇', 'special'],
+    'По правилам стенда': ['✦', 'special'],
+  };
+  function gradeBadge(tag) {
+    const [mark, type] = grades[tag];
+    const badge = node('span', 'grade-badge grade-' + type, mark);
+    badge.setAttribute('aria-hidden', 'true');
+    return badge;
+  }
   let reportOwner = null,
     reportKey = '',
-    analysisRun = 0;
-  function renderAssessment(g, verdict) {
-    const score = StandAnalysis.balance(g, verdict),
-      share = StandAnalysis.share(score);
-    const bar = $('eval-bar');
-    const text =
-      verdict ||
-      (Math.abs(score) < 0.05
-        ? 'Равенство'
-        : score > 0
-          ? 'Перевес белых'
-          : 'Перевес чёрных') +
-        ' · ' +
-        StandAnalysis.label(score, '');
-    bar.title = text;
-    bar.setAttribute('aria-valuetext', text);
-    bar.setAttribute('aria-valuenow', Math.round(share * 100));
-    bar.style.setProperty('--white-share', share * 100 + '%');
-    bar.classList.toggle('reversed', flipped);
-    bar.classList.toggle('black-lead', score < 0);
-    $('eval-label').textContent = StandAnalysis.label(score, verdict);
-    const finished = game.result(),
-      key = finished ? game.state.events.length + '|' + game.state.fen : '';
+    analysisRun = 0,
+    openingTimer;
+  function showReport() {
+    if (game.result() && !$('review-dialog').open)
+      $('review-dialog').showModal();
+  }
+  $('open-report').onclick = showReport;
+  async function showReportMove(index) {
+    $('review-dialog').close();
+    await seek(index);
+    $('board').scrollIntoView({ block: 'center' });
+  }
+  $('walk-report').onclick = () => {
+    const first = $('analysis-rows').firstElementChild;
+    if (first) showReportMove(Number(first.dataset.index));
+    else $('review-dialog').close();
+  };
+  function renderAssessment(g) {
+    const finished = game.result();
+    const key = finished ? game.state.events.length + '|' + game.state.fen : '';
     $('match-review').hidden = !finished;
     if (reportOwner !== game || reportKey !== key) {
       analysisRun++;
       reportOwner = game;
       reportKey = key;
+      clearTimeout(openingTimer);
+      $('review-dialog').close();
       $('analysis-rows').replaceChildren();
-      $('accuracy-summary').hidden = true;
-      $('analysis-status').textContent = '';
-      $('run-analysis').hidden = false;
-      $('run-analysis').disabled = false;
+      if (finished && (!invitedRoom() || online.id)) {
+        const mate = finished.startsWith('Мат');
+        const winner = mate ? (game.turn() === 'w' ? 'b' : 'w') : '';
+        $('review-heading').textContent = mate
+          ? 'Победа ' + (winner === 'w' ? 'белых' : 'чёрных')
+          : 'Ничья';
+        $('review-result').textContent = mate
+          ? 'Мат  ·  ' + (winner === 'w' ? '1 – 0' : '0 – 1')
+          : finished.replace(/^Ничья[ ·]*/, '') + '  ·  ½ – ½';
+        $('report-players').replaceChildren();
+        for (const c of ['w', 'b']) {
+          const stand = STANDS[game.state.stands[c]];
+          const card = node(
+            'div',
+            'report-player ' + (c === 'w' ? 'white-player' : 'black-player'),
+            '',
+          );
+          const avatar = document.createElement('img');
+          avatar.src = 'assets/art/' + stand.art + '-avatar.webp';
+          avatar.alt = '';
+          const color = node(
+            'small',
+            'report-side',
+            c === 'w' ? 'Белые' : 'Чёрные',
+          );
+          const accuracy = node('b', 'report-accuracy', '—');
+          accuracy.id = 'accuracy-' + c;
+          const metric = node('div', 'report-metric', '');
+          metric.append(accuracy, node('small', '', 'точность'));
+          card.append(
+            avatar,
+            color,
+            node('strong', 'report-name', stand.user),
+            metric,
+          );
+          $('report-players').append(card);
+        }
+        openingTimer = setTimeout(showReport, mate ? 750 : 0);
+        analyseMatch();
+      }
     }
-    if (finished) {
-      const index = visibleEvents(g).length;
-      for (const row of $('analysis-rows').children)
-        row.setAttribute(
-          'aria-current',
-          String(Number(row.dataset.index) === index),
-        );
+    if (!finished) {
+      $('selected-note').textContent = '';
+      return;
     }
+    const index = visibleEvents(g).length;
+    let note = '';
+    boardElement.querySelector('.review-square-grade')?.remove();
+    for (const row of $('analysis-rows').children) {
+      const active = Number(row.dataset.index) === index;
+      row.setAttribute('aria-current', String(active));
+      if (active) {
+        note = row.dataset.note;
+        const sq = row.dataset.square;
+        if (sq && /^[a-i][1-8]$/.test(sq)) {
+          const badge = gradeBadge(row.dataset.grade);
+          badge.classList.add('review-square-grade');
+          boardElement
+            .querySelector('[data-square="' + sq + '"]')
+            ?.append(badge);
+        }
+      }
+    }
+    $('selected-note').textContent = note;
   }
-  function reportRow(event, index, row, after) {
+  function reportRow(event, index, row, scoreText) {
     const button = node('button', 'analysis-row', '');
     button.type = 'button';
     button.dataset.index = index;
+    button.dataset.square = event.to || event.target || '';
+    button.dataset.grade = row.tag;
+    button.dataset.note =
+      row.played + ' · ' + row.tag + (row.note ? '. ' + row.note : '');
     button.append(
       node('span', 'analysis-number', String(index)),
       node('i', 'side-stone ' + (event.color === 'w' ? 'white' : 'black'), ''),
     );
     const move = node('span', 'analysis-action', row.played);
-    if (row.best && row.best !== row.played && row.tag !== 'Лучший')
-      move.append(node('small', '', 'Лучше: ' + row.best));
-    button.append(
-      move,
-      node('span', 'move-grade', row.tag),
-      node(
-        'b',
-        '',
-        StandAnalysis.label(StandAnalysis.balance(after), after.result()),
-      ),
-    );
-    if (row.tag === 'Зевок' || row.tag === 'Ошибка')
-      button.classList.add('analysis-error');
-    button.onclick = () => seek(index);
+    if (
+      row.best &&
+      row.best !== row.played &&
+      ['Неточность', 'Ошибка', 'Зевок', 'Упущенный шанс'].includes(row.tag)
+    )
+      move.append(node('small', '', 'Лучше сыграть ' + row.best));
+    const tag = node('span', 'move-grade', row.tag);
+    tag.prepend(gradeBadge(row.tag));
+    button.append(move, tag, node('b', '', scoreText));
+    button.onclick = () => showReportMove(index);
     return button;
   }
-  $('run-analysis').onclick = async () => {
+  function drawReport(scores, rows) {
+    const points = scores.map((score, i) =>
+      [
+        scores.length > 1 ? (400 * i) / (scores.length - 1) : 0,
+        61 - 60 * StandAnalysis.share(score),
+      ]
+        .map((n) => n.toFixed(2))
+        .join(' '),
+    );
+    if (points.length === 1) points.push('400 ' + points[0].split(' ')[1]);
+    const curve = 'M' + points.join(' L');
+    $('chart-line').setAttribute('d', curve);
+    $('chart-fill').setAttribute('d', curve + ' L400 62 L0 62 Z');
+    const totals = $('grade-counts');
+    totals.replaceChildren();
+    for (const [tag, [, type]] of Object.entries(grades)) {
+      const matches = rows.filter((r) => r.tag === tag);
+      if (!matches.length && type === 'special') continue;
+      const tr = document.createElement('tr');
+      const title = node('th', '', tag);
+      title.scope = 'row';
+      title.prepend(gradeBadge(tag));
+      tr.append(title);
+      for (const side of ['w', 'b']) {
+        const found = matches.filter((r) => r.color === side);
+        const cell = document.createElement('td');
+        if (found.length) {
+          const jump = node('button', 'grade-jump', String(found.length));
+          jump.setAttribute(
+            'aria-label',
+            (side === 'w' ? 'Белые' : 'Чёрные') +
+              ', ' +
+              tag +
+              ', ' +
+              found.length +
+              '. Перейти к ходу',
+          );
+          jump.onclick = () => showReportMove(found[0].index);
+          cell.append(jump);
+        } else cell.textContent = '0';
+        tr.append(cell);
+      }
+      totals.append(tr);
+    }
+  }
+  $('retry-report').onclick = () => analyseMatch();
+  async function analyseMatch() {
     const current = ++analysisRun,
       live = game,
       events = live.state.events,
@@ -816,15 +904,19 @@
     const counts = { w: [], b: [] };
     const list = $('analysis-rows'),
       status = $('analysis-status'),
-      btn = $('run-analysis');
+      btn = $('walk-report');
+    const scores = [],
+      rows = [];
     btn.disabled = true;
+    $('retry-report').hidden = true;
+    $('grade-counts').replaceChildren();
+    for (const id of ['chart-line', 'chart-fill']) $(id).removeAttribute('d');
     list.replaceChildren();
-    $('accuracy-summary').hidden = true;
     const total = visibleEvents(live).length;
     let worker = null;
     try {
       if (location.protocol !== 'file:' && typeof Worker !== 'undefined')
-        worker = new Worker('analysis-worker.js');
+        worker = new Worker('analysis-worker.js?v=2');
       async function analyse(before, after, event) {
         if (worker) {
           try {
@@ -850,6 +942,7 @@
       status.textContent = 'Разбор · 0 / ' + total;
       let position = remote ? await frame(0) : replayStart(),
         index = 0;
+      scores.push(StandAnalysis.balance(position));
       for (const event of events) {
         if (current !== analysisRun) return;
         if (
@@ -867,32 +960,44 @@
         if (current !== analysisRun) return;
         if (event.erased) row = { ...row, tag: 'Стёрт', accuracy: null };
         if (row.accuracy !== null) counts[event.color].push(row.accuracy);
-        list.append(reportRow(event, index, row, position));
+        const score = StandAnalysis.balance(position);
+        scores.push(score);
+        rows.push({ tag: row.tag, color: event.color, index });
+        list.append(
+          reportRow(
+            event,
+            index,
+            row,
+            StandAnalysis.label(score, position.result()),
+          ),
+        );
         status.textContent = 'Разбор · ' + index + ' / ' + total;
       }
       if (current !== analysisRun) return;
       for (const c of ['w', 'b']) {
         const scores = counts[c];
         $('accuracy-' + c).textContent = scores.length
-          ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) + '%'
+          ? (scores.reduce((a, b) => a + b, 0) / scores.length).toLocaleString(
+              'ru-RU',
+              { maximumFractionDigits: 1 },
+            ) + '%'
           : '—';
       }
-      $('accuracy-summary').hidden = false;
-      btn.hidden = true;
-      status.textContent = list.childElementCount
-        ? 'Выберите ход, чтобы увидеть позицию.'
-        : 'В партии ещё не было ходов.';
-      renderAssessment(displayed(), displayed().result());
+      drawReport(scores, rows);
+      btn.disabled = false;
+      btn.textContent = rows.length ? 'Смотреть ходы' : 'К доске';
+      status.textContent = '';
+      renderAssessment(displayed());
     } catch {
       if (current === analysisRun) {
         status.textContent =
           'Не удалось завершить разбор. Можно попробовать ещё раз.';
-        btn.disabled = false;
+        $('retry-report').hidden = false;
       }
     } finally {
       worker?.terminate();
     }
-  };
+  }
   function render(game = displayed()) {
     renderReplay();
     renderBoard();
@@ -903,7 +1008,7 @@
       result = game.result(),
       color = game.turn(),
       check = game.chess.in_check();
-    renderAssessment(game, result);
+    renderAssessment(game);
     let turnLabel =
       result ||
       (s.freeze
@@ -1029,18 +1134,9 @@
     $('leave-match').hidden = !online.id;
     $('match-type').textContent = online.id
       ? 'Онлайн · вы играете за ' + (online.side === 'w' ? 'белых' : 'чёрных')
-      : debug
-        ? 'Тестовая партия'
-        : 'Локальная партия';
-    $('debug-open').classList.toggle('active', debug);
-    $('debug-open').setAttribute('aria-pressed', String(debug));
-    $('debug-banner').hidden = !debug;
-    $('debug-undo').disabled = !debugUndo.length;
-    $('recharge').disabled = !game.canRecharge();
+      : 'Локальная партия';
     $('new-game').disabled = Boolean(online.id);
     $('choose-stands').hidden = Boolean(online.id || game.state.events.length);
-    $('debug-open').disabled = Boolean(online.id);
-    $('online-open').disabled = debug;
     $('online-open').classList.toggle('active', Boolean(online.id));
     $('online-open').setAttribute('aria-pressed', String(Boolean(online.id)));
     if ($('online').open) renderRoomDialog();
@@ -1069,11 +1165,9 @@
       online.act({ type: 'move', from, to, promotion }).catch(roomActionError);
       return;
     }
-    track();
     const wasFrozen = game.state.freeze > 0;
     const move = game.move(from, to, promotion);
     if (!move) {
-      if (debug) debugUndo.pop();
       return;
     }
     moveSound(move.captured);
@@ -1404,9 +1498,7 @@
       }
       return;
     }
-    track();
     if (!game.activate(color, target, choice)) {
-      if (debug) debugUndo.pop();
       return;
     }
     changed();
@@ -1426,7 +1518,6 @@
       }
       const l = game.state.position?.links.find((l) => l.owner === color);
       if (!l || !game.canMerge(color)) return;
-      track();
       if (game.merge(color)) {
         changed();
         if (!playCalamity(game.state.events.at(-1)?.calamity))
@@ -1507,7 +1598,8 @@
     const canvas = $('invite-qr').querySelector('canvas');
     if (!qr || canvas.dataset.invite === link) return;
     const code = qrcodegen.QrCode.encodeText(link, qrcodegen.QrCode.Ecc.MEDIUM);
-    const scale = 8, margin = 4;
+    const scale = 8,
+      margin = 4;
     canvas.width = canvas.height = (code.size + margin * 2) * scale;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#fff';
@@ -1515,7 +1607,13 @@
     ctx.fillStyle = '#111';
     for (let y = 0; y < code.size; y++) {
       for (let x = 0; x < code.size; x++) {
-        if (code.getModule(x, y)) ctx.fillRect((x + margin) * scale, (y + margin) * scale, scale, scale);
+        if (code.getModule(x, y))
+          ctx.fillRect(
+            (x + margin) * scale,
+            (y + margin) * scale,
+            scale,
+            scale,
+          );
       }
     }
     canvas.dataset.invite = link;
@@ -1706,20 +1804,15 @@
   $('new-game').onclick = () => {
     for (const side of ['w', 'b'])
       $('pick-' + side).value = game.state.stands[side];
-    $('restart-note').textContent = debug
-      ? 'Тестовая доска вернётся в начальную позицию. Основная партия сохранена.'
-      : 'Текущая партия и её журнал будут сброшены. Оба игрока начнут с 0 маны.';
     $('restart').showModal();
   };
   $('restart-confirm').onclick = () => {
-    track();
     showTowerZone = true;
     game = new StandGame(undefined, 0, {
       w: $('pick-w').value,
       b: $('pick-b').value,
     });
-    if (!debug) mainGame = game;
-    $('scenario-hint').textContent = 'Тестовая партия с начальной позиции.';
+    mainGame = game;
     $('restart').close();
     stopAudio();
     changed();
@@ -1743,108 +1836,6 @@
     } else if (house) playStand('house', 'i4');
   }
   $('choose-stands').onclick = () => $('new-game').click();
-  for (const [id, spec] of Object.entries(scenarios)) {
-    const opt = document.createElement('option');
-    opt.value = id;
-    opt.textContent = spec.label;
-    $('scenario').append(opt);
-  }
-  $('scenario').onchange = () =>
-    ($('scenario-preview').textContent = scenarios[$('scenario').value].hint);
-  $('scenario').onchange();
-  $('debug-open').onclick = () => {
-    if (review) seek(visibleEvents(game).length);
-    if (!debug) {
-      game = StandGame.restore(mainGame.snapshot());
-      debug = true;
-      debugUndo = [];
-      resetSelection();
-      $('scenario-hint').textContent = 'Тестовая копия партии';
-      render();
-    }
-    $('debug-feedback').textContent = '';
-    $('debug').showModal();
-  };
-  $('load-scenario').onclick = () => {
-    const id = $('scenario').value;
-    track();
-    showTowerZone = true;
-    game = scenario(id);
-    $('scenario-hint').textContent = scenarios[id].hint;
-    $('debug').close();
-    changed();
-    passiveIntro();
-  };
-  $('debug-undo').onclick = () => {
-    if (!debugUndo.length) return;
-    game = StandGame.restore(debugUndo.pop());
-    $('scenario-hint').textContent = 'Тестовая копия партии';
-    changed();
-    $('debug-feedback').textContent = 'Последнее действие отменено.';
-  };
-  $('recharge').onclick = () => {
-    track();
-    if (game.recharge()) {
-      changed();
-      $('debug-feedback').textContent = 'Мана обоих игроков заполнена.';
-    } else debugUndo.pop();
-  };
-  for (const id of extraStands) {
-    const btn = node('button', 'sample ' + id, STANDS[id].name);
-    btn.dataset.preview = id;
-    $('extra-previews').append(btn);
-  }
-  const accidentPreview = node('button', 'sample wonder', 'Случайное бедствие');
-  accidentPreview.dataset.preview = 'calamity';
-  $('extra-previews').append(accidentPreview);
-  for (const el of document.querySelectorAll('[data-sample]'))
-    el.onclick = () => playClip(el.dataset.sample, true);
-  for (const el of document.querySelectorAll('[data-preview]'))
-    el.onclick = () => {
-      const color = el.dataset.preview;
-      $('debug').close();
-      stopAudio();
-      if (color === 'dust')
-        playStand('detonate', 'e4', { type: 'r', color: 'b' });
-      else if (color === 'calamity') {
-        const square =
-          ['e4', 'd4', 'e5', 'd5'].find((s) => !game.chess.get(s)) || 'e4';
-        playCalamity([{ square, type: 'r', color: 'b' }]);
-      } else if (
-        color === 'echoes' ||
-        color === 'diamond' ||
-        color === 'sticky'
-      ) {
-        const preferred = color === 'echoes' ? 'g8' : 'e2';
-        const square = game.chess.get(preferred)
-          ? preferred
-          : [...boardElement.children].find((cell) =>
-              game.chess.get(cell.dataset.square),
-            )?.dataset.square;
-        playStand(color, square);
-      } else if (extraStands.includes(color))
-        playStand(
-          color,
-          color === 'superfly'
-            ? game.state.tower || 'd4'
-            : color === 'house' &&
-                boardElement.classList.contains('house-board')
-              ? 'i4'
-              : 'e4',
-        );
-      else playStand({ w: 'crimson', b: 'world', resume: 'resume' }[color]);
-    };
-  $('exit-debug').onclick = () => {
-    review = null;
-    window.StandEffects.stop();
-    debug = false;
-    game = mainGame;
-    debugUndo = [];
-    stopAudio();
-    resetSelection();
-    render();
-    toast('Основная партия восстановлена.');
-  };
   for (const el of document.querySelectorAll('.close'))
     el.onclick = () => el.closest('dialog').close();
   for (const dlg of document.querySelectorAll('dialog'))

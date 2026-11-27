@@ -234,6 +234,45 @@
     }
     return g;
   }
+  const openingLines = [
+    'e2e4 e7e5 g1f3 b8c6 f1c4 f8c5',
+    'e2e4 e7e5 g1f3 b8c6 f1b5 a7a6',
+    'e2e4 c7c5 g1f3 d7d6 d2d4 c5d4',
+    'e2e4 e7e6 d2d4 d7d5',
+    'e2e4 c7c6 d2d4 d7d5',
+    'd2d4 d7d5 c2c4 e7e6',
+    'd2d4 d7d5 c2c4 d5c4',
+    'd2d4 g8f6 c2c4 g7g6',
+  ];
+  function bookMove(state, event) {
+    if (
+      event.kind !== 'move' ||
+      state.events.length >= 6 ||
+      state.tower ||
+      state.startFen !==
+        'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1' ||
+      state.events.some((a) => a.kind !== 'move')
+    )
+      return false;
+    const line = [...state.events, event].map((m) => m.from + m.to).join(' ');
+    return openingLines.some(
+      (book) => book === line || book.startsWith(line + ' '),
+    );
+  }
+  // An offered piece qualifies only if accepting the sacrifice allows a verified mate.
+  function matingReply(g, actor) {
+    if (g.turn() !== actor || g.result()) return false;
+    const seed = publicSnapshot(g.state);
+    return actions(g).some((a) => {
+      if (a.kind === 'move' && a.san && !/[+#]/.test(a.san)) return false;
+      const next = restoreForAnalysis(seed);
+      return (
+        apply(next, a) &&
+        next.turn() !== actor &&
+        next.result().startsWith('Мат')
+      );
+    });
+  }
   function grade(before, after, event) {
     const actor = event.color,
       direction = sign(actor);
@@ -262,6 +301,33 @@
       if (line.next.result()) continue;
       const replies = successors(line.next);
       if (replies.length) {
+        const offered =
+          line.a.kind === 'move' && line.next.chess.get(line.a.to);
+        const captured =
+          line.a.kind === 'move' && g.chess.get(line.a.death || line.a.to);
+        if (
+          offered?.color === actor &&
+          offered.type !== 'k' &&
+          !promotion(line.a) &&
+          line.next.turn() !== actor &&
+          !line.next.state.position?.links?.some(
+            (link) => link.clone === line.a.to,
+          ) &&
+          values[offered.walk || offered.type] -
+            (values[captured?.walk || captured?.type] || 0) >=
+            1.7
+        ) {
+          const takes = replies.filter(
+            (r) =>
+              r.a.kind === 'move' &&
+              r.a.captured &&
+              (r.a.death || r.a.to) === line.a.to,
+          );
+          if (takes.length && takes.every((r) => matingReply(r.next, actor))) {
+            for (const r of takes) r.score = 32 * direction;
+            line.soundSacrifice = true;
+          }
+        }
         const mover = sign(line.next.turn());
         line.score = mover * Math.max(...replies.map((r) => mover * r.score));
       }
@@ -272,7 +338,29 @@
       0,
       direction * (share(best.score) - share(actual.score)),
     );
-    return classify(played, loss, name(best.a, before.stands));
+    const row = classify(played, loss, name(best.a, before.stands));
+    if (actual.soundSacrifice && loss < 0.01 && direction * actual.score >= 0) {
+      row.tag = 'Бриллиантовый';
+      row.note = 'Принятие жертвы позволяет поставить мат следующим действием.';
+    } else if (
+      loss > 0.15 &&
+      best.score * direction >= 32 &&
+      actual.score * direction < 12
+    ) {
+      row.tag = 'Упущенный шанс';
+      row.note = 'Была возможность поставить мат.';
+    } else if (loss < 0.07 && bookMove(before, event)) {
+      row.tag = 'Книжный';
+    } else if (
+      actual === best &&
+      finalists.length > 1 &&
+      !actual.next.result() &&
+      direction * (share(best.score) - share(finalists[1].score)) >= 0.15
+    ) {
+      row.tag = 'Сильный';
+      row.note = 'Этот ход заметно сильнее других проверенных продолжений.';
+    }
+    return row;
   }
   function classify(played, loss, best) {
     return {

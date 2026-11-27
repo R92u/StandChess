@@ -7,17 +7,17 @@
     <title>StandChess — Шахматная арена</title>
     <link rel="icon" href="assets/mark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="assets/fonts/fonts.css" />
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="style.css?v=2" />
     <script defer src="vendor/chess.min.js"></script>
     <script defer src="variants.js"></script>
-    <script defer src="engine.js"></script>
-    <script defer src="analysis.js"></script>
+    <script defer src="engine.js?v=2"></script>
+    <script defer src="analysis.js?v=2"></script>
     <script defer src="effects.js"></script>
     <script defer src="piece-effects.js"></script>
     <script defer src="board-fx.js"></script>
     <script defer src="online.js"></script>
     <script defer src="vendor/qrcodegen.js"></script>
-    <script defer src="ui.js"></script>
+    <script defer src="ui.js?v=2"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -36,9 +36,6 @@
             <i data-icon="players"></i><span>Онлайн</span>
           </button>
           <div class="rail-divider"></div>
-          <button class="rail-item" id="debug-open" title="Отладка">
-            <i data-icon="bug"></i><span>Отладка</span>
-          </button>
         </nav>
         <div class="rail-bottom">
           <button
@@ -53,11 +50,6 @@
         </div>
       </aside>
       <main id="arena">
-        <div id="debug-banner" class="debug-banner" hidden>
-          <i data-icon="bug"></i
-          ><span id="scenario-hint">Тестовая копия партии</span
-          ><button id="exit-debug">Выйти из отладки</button>
-        </div>
         <div class="arena-layout">
           <section class="play-column" aria-labelledby="arena-title">
             <header class="arena-heading">
@@ -73,16 +65,8 @@
                 Выйти из онлайн-игры
               </button>
               <p id="target-hint" role="status" hidden></p>
+              <p id="selected-note" aria-live="polite"></p>
               <div class="board-rim">
-                <div
-                  id="eval-bar"
-                  role="meter"
-                  aria-label="Оценка позиции"
-                  aria-valuemin="0"
-                  aria-valuemax="100"
-                >
-                  <span class="eval-white"></span><b id="eval-label">0,0</b>
-                </div>
                 <div class="board-stage">
                   <div id="board" role="group" aria-label="Игровое поле"></div>
                   <div id="mate-marks" hidden aria-hidden="true">
@@ -147,16 +131,11 @@
               aria-label="Разбор партии"
             >
               <header>
-                <h2>Разбор партии</h2>
-                <button class="tool-button" id="run-analysis">
-                  Разобрать партию
+                <h2>Ходы партии</h2>
+                <button type="button" class="tool-button" id="open-report">
+                  Итоги партии
                 </button>
               </header>
-              <p id="analysis-status" role="status"></p>
-              <div id="accuracy-summary" hidden>
-                <span>Точность белых <strong id="accuracy-w"></strong></span
-                ><span>Точность чёрных <strong id="accuracy-b"></strong></span>
-              </div>
               <div id="analysis-rows"></div>
             </section>
           </section>
@@ -341,22 +320,42 @@
         Создайте комнату и пригласите друга по ссылке или QR-коду.
       </p>
       <div id="invite-tools" hidden>
-          <div class="invite-modes" role="group" aria-label="Приглашение в комнату">
-            <button type="button" class="tool-button" id="invite-link-mode" aria-controls="invite-link">Ссылка</button>
-            <button type="button" class="tool-button" id="invite-qr-mode" aria-controls="invite-qr">QR-код</button>
-          </div>
-          <div class="invite-row" id="invite-link">
-            <input id="invite-url" aria-label="Ссылка на комнату" readonly spellcheck="false" /><button
+        <div
+          class="invite-modes"
+          role="group"
+          aria-label="Приглашение в комнату"
+        >
+          <button
+            type="button"
             class="tool-button"
-            id="invite-copy"
+            id="invite-link-mode"
+            aria-controls="invite-link"
           >
-            Скопировать
+            Ссылка
+          </button>
+          <button
+            type="button"
+            class="tool-button"
+            id="invite-qr-mode"
+            aria-controls="invite-qr"
+          >
+            QR-код
           </button>
         </div>
-          <figure id="invite-qr" hidden>
-            <canvas role="img" aria-label="QR-код для входа в комнату"></canvas>
-            <figcaption>Друг может отсканировать код камерой телефона.</figcaption>
-          </figure>
+        <div class="invite-row" id="invite-link">
+          <input
+            id="invite-url"
+            aria-label="Ссылка на комнату"
+            readonly
+            spellcheck="false"
+          /><button class="tool-button" id="invite-copy">Скопировать</button>
+        </div>
+        <figure id="invite-qr" hidden>
+          <canvas role="img" aria-label="QR-код для входа в комнату"></canvas>
+          <figcaption>
+            Друг может отсканировать код камерой телефона.
+          </figcaption>
+        </figure>
       </div>
       <label id="seat-stand-label" class="stand-field"
         >Ваш стенд<select id="seat-stand"></select
@@ -376,63 +375,67 @@
         </button>
       </div>
     </dialog>
-    <dialog id="debug" aria-labelledby="debug-title">
-      <div class="dialog-heading">
-        <h2 id="debug-title"><i data-icon="bug"></i>Режим отладки</h2>
-        <button class="icon-button close" aria-label="Закрыть">
+    <dialog id="review-dialog" aria-labelledby="review-heading">
+      <header class="report-heading">
+        <div>
+          <p class="report-kicker">Разбор партии</p>
+          <h2 id="review-heading"></h2>
+          <p id="review-result"></p>
+        </div>
+        <button
+          type="button"
+          class="icon-button close"
+          aria-label="Закрыть разбор"
+        >
           <i data-icon="x"></i>
         </button>
+      </header>
+      <div class="report-body">
+        <div id="report-players"></div>
+        <figure class="report-chart">
+          <figcaption>Перевес по ходу партии</figcaption>
+          <svg
+            viewBox="0 0 400 62"
+            preserveAspectRatio="none"
+            role="img"
+            aria-label="График оценки позиции со стороны белых"
+          >
+            <path id="chart-fill" fill="#e4eee1"></path>
+            <path
+              d="M0 31 H400"
+              stroke="#85a18f"
+              stroke-dasharray="3 4"
+              fill="none"
+            ></path>
+            <path
+              id="chart-line"
+              stroke="#97be9a"
+              stroke-width="2"
+              fill="none"
+              vector-effect="non-scaling-stroke"
+            ></path>
+          </svg>
+        </figure>
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th scope="col">Качество ходов</th>
+              <th scope="col">Белые</th>
+              <th scope="col">Чёрные</th>
+            </tr>
+          </thead>
+          <tbody id="grade-counts"></tbody>
+        </table>
       </div>
-      <p>
-        Вы играете на копии доски. После выхода из отладки основная партия
-        продолжится с прежнего хода.
-      </p>
-      <label for="scenario">Тестовая позиция</label>
-      <div class="select-row">
-        <select id="scenario"></select
-        ><button id="load-scenario" class="primary">Загрузить</button>
-      </div>
-      <p id="scenario-preview" class="field-hint"></p>
-      <div class="dialog-row">
-        <button class="tool-button" id="recharge">
-          <i data-icon="zap"></i>Заполнить ману обоим</button
-        ><button class="tool-button" id="debug-undo">
-          <i data-icon="undo"></i>Шаг назад
+      <footer class="report-footer">
+        <p id="analysis-status" role="status"></p>
+        <button type="button" class="primary wide" id="walk-report">
+          Смотреть ходы
         </button>
-      </div>
-      <h3 class="field-label">Проверка звука</h3>
-      <div class="dialog-row">
-        <button class="sample crimson" data-sample="w">
-          <i data-icon="play"></i>King Crimson</button
-        ><button class="sample world" data-sample="b">
-          <i data-icon="play"></i>The World
+        <button type="button" class="tool-button" hidden id="retry-report">
+          Повторить разбор
         </button>
-        <button class="sample dust" data-sample="dust">
-          <i data-icon="play"></i>Голос Киры
-        </button>
-      </div>
-      <h3 class="field-label">Предпросмотр анимации</h3>
-      <div class="dialog-row">
-        <button class="sample echoes" data-preview="echoes">
-          <i data-icon="gravity"></i>Echoes ACT 3
-        </button>
-        <button class="sample diamond" data-preview="diamond">
-          <i data-icon="gem"></i>Crazy Diamond
-        </button>
-      </div>
-      <div class="dialog-row">
-        <button class="sample crimson" data-preview="w">
-          <i data-icon="rewind"></i>King Crimson</button
-        ><button class="sample world" data-preview="b">
-          <i data-icon="clock"></i>The World
-        </button>
-      </div>
-      <button class="sample world resume-preview" data-preview="resume">
-        <i data-icon="restart"></i>Возвращение времени
-      </button>
-      <div class="dialog-row" id="extra-previews"></div>
-      <div id="debug-feedback" role="status"></div>
-      <button class="primary wide close">К тестовой доске</button>
+      </footer>
     </dialog>
     <dialog id="restart" aria-labelledby="restart-title">
       <div class="dialog-heading">

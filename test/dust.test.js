@@ -1,7 +1,8 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { StandGame, scenario } = require('../engine');
+const { StandGame } = require('../engine');
+const { scenario } = require('./fixtures/scenarios.cjs');
 
 test('bait costs 100, follows its carrier and detonates only on a capture', () => {
   const g = scenario('dust');

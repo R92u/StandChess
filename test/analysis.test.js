@@ -1,7 +1,8 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { StandGame, scenario } = require('../engine');
+const { StandGame } = require('../engine');
+const { scenario } = require('./fixtures/scenarios.cjs');
 const { balance, share, label, grade, apply } = require('../analysis');
 
 test('checkmate ends the meter only when no stand can save the king', () => {
@@ -23,7 +24,7 @@ test('the review finds a mating move, marks a missed mate and preserves its inpu
   const saved = g.snapshot();
   for (const [from, to, expected] of [
     ['d8', 'h4', 'Лучший'],
-    ['d7', 'd6', 'Зевок'],
+    ['d7', 'd6', 'Упущенный шанс'],
   ]) {
     const current = StandGame.restore(saved);
     assert.ok(current.move(from, to));
@@ -38,6 +39,37 @@ test('the review finds a mating move, marks a missed mate and preserves its inpu
   assert.ok(draw.move('c7', 'b6'));
   assert.equal(balance(draw), 0);
   assert.equal(label(0, draw.result()), '½–½');
+});
+
+test('a brilliant queen offer must still work against the defender’s stand', () => {
+  const fen = '5r1k/6pp/7N/3Q4/8/8/8/7K w - - 0 1';
+  for (const mana of [0, 100]) {
+    const g = new StandGame(fen, mana, { w: 'world', b: 'crimson' });
+    const before = g.snapshot();
+    assert.ok(g.move('d5', 'g8'));
+    const row = grade(before, g.snapshot(), g.state.events.at(-1));
+    if (!mana) {
+      assert.equal(row.tag, 'Бриллиантовый');
+      assert.ok(g.move('f8', 'g8'));
+      assert.ok(g.move('h6', 'f7'));
+      assert.match(g.result(), /Мат/);
+    } else assert.notEqual(row.tag, 'Бриллиантовый');
+  }
+});
+
+test('book moves follow a known line from the standard starting position', () => {
+  for (const [from, to, book] of [
+    ['e2', 'e4', true],
+    ['a2', 'a3', false],
+  ]) {
+    const g = new StandGame(),
+      before = g.snapshot();
+    assert.ok(g.move(from, to));
+    assert.equal(
+      grade(before, g.snapshot(), g.state.events.at(-1)).tag === 'Книжный',
+      book,
+    );
+  }
 });
 
 test('the same board responds to mana, rewritten movement and extra turns', () => {

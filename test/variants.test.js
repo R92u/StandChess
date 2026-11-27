@@ -1,7 +1,8 @@
 'use strict';
 const test = require('node:test'),
   assert = require('node:assert/strict');
-const { StandGame, scenario } = require('../engine');
+const { StandGame } = require('../engine');
+const { scenario } = require('./fixtures/scenarios.cjs');
 const { Chess } = require('../vendor/chess.min.js');
 const game = (fen, w, b = 'world', mana = 150) =>
   new StandGame(fen, mana, { w, b });
