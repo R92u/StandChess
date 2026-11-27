@@ -201,6 +201,8 @@ const publicFiles = new Set([
   'ui.js',
   'online.js',
   'engine.js',
+  'analysis.js',
+  'analysis-worker.js',
   'variants.js',
   'effects.js',
   'piece-effects.js',

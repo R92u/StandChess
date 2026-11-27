@@ -211,17 +211,7 @@
           replay.state.events.length === game.state.stickyRulesFrom
         )
           replay.useCurrentStickyRules();
-        let ok;
-        if (e.kind === 'move')
-          ok = replay.move(
-            e.from,
-            e.to,
-            e.promotion || e.san?.match(/=([QRBN])/i)?.[1].toLowerCase(),
-          );
-        else if (e.kind === 'ability')
-          ok = replay.activate(e.color, e.target, e.choice);
-        else if (e.kind === 'merge') ok = replay.merge(e.color);
-        else if (e.kind === 'debug') ok = replay.recharge();
+        const ok = StandAnalysis.apply(replay, e);
         if (!ok) {
           review = null;
           render();
@@ -338,6 +328,59 @@
       game.state.locked[piece.color] !== square
     );
   }
+  let lastMate = '';
+  const crown =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="m2 6 5 4 5-7 5 7 5-4-3 12H5zm4 14h12v2H6z"/></svg>';
+  $('mate-marks').firstElementChild.innerHTML = crown;
+  function finishMarks(g, files, ranks, verdict) {
+    const marks = $('mate-marks'),
+      mate = verdict.startsWith('Мат');
+    marks.hidden = !mate;
+    if (!mate) {
+      if (!review) lastMate = '';
+      return;
+    }
+    const key = g.state.fen + '|' + g.state.events.length;
+    const fresh = !review && key !== lastMate;
+    if (!review) lastMate = key;
+    marks.style.gridTemplateColumns = 'repeat(' + files.length + ',1fr)';
+    for (const [col, file] of files.entries())
+      for (const [row, rank] of ranks.entries()) {
+        const piece = g.chess.get(file + rank);
+        if (piece?.type !== 'k') continue;
+        const badge =
+          piece.color === g.turn()
+            ? marks.lastElementChild
+            : marks.firstElementChild;
+        badge.style.gridColumn = col + 1;
+        badge.style.gridRow = row + 1;
+      }
+    if (fresh && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      boardElement
+        .querySelector('.mated-king img')
+        ?.animate(
+          [
+            { transform: 'rotate(0)', offset: 0 },
+            { transform: 'rotate(0)', offset: 0.25 },
+            { transform: 'rotate(-22deg) translateY(3%)' },
+          ],
+          { duration: 550, easing: 'ease-out' },
+        );
+      for (const badge of marks.children)
+        badge.animate(
+          [
+            { transform: 'translateY(-40%) scale(.3)', opacity: 0 },
+            {
+              transform: 'translateY(1%) scale(1.12)',
+              offset: 0.64,
+              opacity: 1,
+            },
+            { transform: 'none', opacity: 1 },
+          ],
+          { duration: 610, easing: 'ease-out' },
+        );
+    }
+  }
   function renderBoard(game = displayed()) {
     const hasRoom = Object.values(game.state.stands).includes('house');
     const files = [...(hasRoom ? 'abcdefghi' : 'abcdefgh')];
@@ -346,7 +389,8 @@
     const board = $('board'),
       fragment = document.createDocumentFragment(),
       inCheck = game.chess.in_check(),
-      playing = !game.result() && mayPlay();
+      verdict = game.result(),
+      playing = !verdict && mayPlay();
     board.classList.toggle('house-board', hasRoom);
     const abilityTargets = targeting
       ? targetOrigin
@@ -440,6 +484,12 @@
         if (target) cell.classList.add(piece ? 'capture' : 'legal');
         if (inCheck && piece?.type === 'k' && piece.color === game.turn())
           cell.classList.add('check');
+        if (
+          verdict.startsWith('Мат') &&
+          piece?.type === 'k' &&
+          piece.color === game.turn()
+        )
+          cell.classList.add('mated-king');
         const transparency = piece?.transparent;
         const transparencyLabel = transparency
           ? 'Sticky Fingers · ' +
@@ -542,6 +592,7 @@
       }
     const hadFocus = board.contains(document.activeElement);
     board.replaceChildren(fragment);
+    finishMarks(game, files, ranks, verdict);
     window.PieceEffects.sync();
     window.BoardStandFX.sync();
     if (hadFocus)
@@ -686,6 +737,162 @@
       }
     }
   }
+  let reportOwner = null,
+    reportKey = '',
+    analysisRun = 0;
+  function renderAssessment(g, verdict) {
+    const score = StandAnalysis.balance(g, verdict),
+      share = StandAnalysis.share(score);
+    const bar = $('eval-bar');
+    const text =
+      verdict ||
+      (Math.abs(score) < 0.05
+        ? 'Равенство'
+        : score > 0
+          ? 'Перевес белых'
+          : 'Перевес чёрных') +
+        ' · ' +
+        StandAnalysis.label(score, '');
+    bar.title = text;
+    bar.setAttribute('aria-valuetext', text);
+    bar.setAttribute('aria-valuenow', Math.round(share * 100));
+    bar.style.setProperty('--white-share', share * 100 + '%');
+    bar.classList.toggle('reversed', flipped);
+    bar.classList.toggle('black-lead', score < 0);
+    $('eval-label').textContent = StandAnalysis.label(score, verdict);
+    const finished = game.result(),
+      key = finished ? game.state.events.length + '|' + game.state.fen : '';
+    $('match-review').hidden = !finished;
+    if (reportOwner !== game || reportKey !== key) {
+      analysisRun++;
+      reportOwner = game;
+      reportKey = key;
+      $('analysis-rows').replaceChildren();
+      $('accuracy-summary').hidden = true;
+      $('analysis-status').textContent = '';
+      $('run-analysis').hidden = false;
+      $('run-analysis').disabled = false;
+    }
+    if (finished) {
+      const index = visibleEvents(g).length;
+      for (const row of $('analysis-rows').children)
+        row.setAttribute(
+          'aria-current',
+          String(Number(row.dataset.index) === index),
+        );
+    }
+  }
+  function reportRow(event, index, row, after) {
+    const button = node('button', 'analysis-row', '');
+    button.type = 'button';
+    button.dataset.index = index;
+    button.append(
+      node('span', 'analysis-number', String(index)),
+      node('i', 'side-stone ' + (event.color === 'w' ? 'white' : 'black'), ''),
+    );
+    const move = node('span', 'analysis-action', row.played);
+    if (row.best && row.best !== row.played && row.tag !== 'Лучший')
+      move.append(node('small', '', 'Лучше: ' + row.best));
+    button.append(
+      move,
+      node('span', 'move-grade', row.tag),
+      node(
+        'b',
+        '',
+        StandAnalysis.label(StandAnalysis.balance(after), after.result()),
+      ),
+    );
+    if (row.tag === 'Зевок' || row.tag === 'Ошибка')
+      button.classList.add('analysis-error');
+    button.onclick = () => seek(index);
+    return button;
+  }
+  $('run-analysis').onclick = async () => {
+    const current = ++analysisRun,
+      live = game,
+      events = live.state.events,
+      room = online.id;
+    const remote = room && Object.values(live.state.stands).includes('dust');
+    const counts = { w: [], b: [] };
+    const list = $('analysis-rows'),
+      status = $('analysis-status'),
+      btn = $('run-analysis');
+    btn.disabled = true;
+    list.replaceChildren();
+    $('accuracy-summary').hidden = true;
+    const total = visibleEvents(live).length;
+    let worker = null;
+    try {
+      if (location.protocol !== 'file:' && typeof Worker !== 'undefined')
+        worker = new Worker('analysis-worker.js');
+      async function analyse(before, after, event) {
+        if (worker) {
+          try {
+            return await new Promise((resolve, reject) => {
+              worker.onmessage = ({ data }) =>
+                data.error ? reject(Error()) : resolve(data.row);
+              worker.onerror = reject;
+              worker.postMessage({ before, after, event });
+            });
+          } catch {
+            worker.terminate();
+            worker = null;
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        return StandAnalysis.grade(before, after, event);
+      }
+      const frame = async (i) =>
+        StandGame.restore(
+          (await online.request(room, online.key, '', null, undefined, i))
+            .state,
+        );
+      status.textContent = 'Разбор · 0 / ' + total;
+      let position = remote ? await frame(0) : replayStart(),
+        index = 0;
+      for (const event of events) {
+        if (current !== analysisRun) return;
+        if (
+          position.state.position?.stickyRules === 1 &&
+          position.state.events.length === live.state.stickyRulesFrom
+        )
+          position.useCurrentStickyRules();
+        const before = position.snapshot();
+        if (remote) position = await frame(index + 1);
+        else if (!StandAnalysis.apply(position, event)) throw Error('history');
+        if (event.kind === 'ability' && event.stand === 'dust') continue;
+        index++;
+        if (event.kind === 'debug') continue;
+        let row = await analyse(before, position.snapshot(), event);
+        if (current !== analysisRun) return;
+        if (event.erased) row = { ...row, tag: 'Стёрт', accuracy: null };
+        if (row.accuracy !== null) counts[event.color].push(row.accuracy);
+        list.append(reportRow(event, index, row, position));
+        status.textContent = 'Разбор · ' + index + ' / ' + total;
+      }
+      if (current !== analysisRun) return;
+      for (const c of ['w', 'b']) {
+        const scores = counts[c];
+        $('accuracy-' + c).textContent = scores.length
+          ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) + '%'
+          : '—';
+      }
+      $('accuracy-summary').hidden = false;
+      btn.hidden = true;
+      status.textContent = list.childElementCount
+        ? 'Выберите ход, чтобы увидеть позицию.'
+        : 'В партии ещё не было ходов.';
+      renderAssessment(displayed(), displayed().result());
+    } catch {
+      if (current === analysisRun) {
+        status.textContent =
+          'Не удалось завершить разбор. Можно попробовать ещё раз.';
+        btn.disabled = false;
+      }
+    } finally {
+      worker?.terminate();
+    }
+  };
   function render(game = displayed()) {
     renderReplay();
     renderBoard();
@@ -696,6 +903,7 @@
       result = game.result(),
       color = game.turn(),
       check = game.chess.in_check();
+    renderAssessment(game, result);
     let turnLabel =
       result ||
       (s.freeze

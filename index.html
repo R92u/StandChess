@@ -11,6 +11,7 @@
     <script defer src="vendor/chess.min.js"></script>
     <script defer src="variants.js"></script>
     <script defer src="engine.js"></script>
+    <script defer src="analysis.js"></script>
     <script defer src="effects.js"></script>
     <script defer src="piece-effects.js"></script>
     <script defer src="board-fx.js"></script>
@@ -72,8 +73,21 @@
               </button>
               <p id="target-hint" role="status" hidden></p>
               <div class="board-rim">
+                <div
+                  id="eval-bar"
+                  role="meter"
+                  aria-label="Оценка позиции"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                >
+                  <span class="eval-white"></span><b id="eval-label">0,0</b>
+                </div>
                 <div class="board-stage">
                   <div id="board" role="group" aria-label="Игровое поле"></div>
+                  <div id="mate-marks" hidden aria-hidden="true">
+                    <span class="mate-winner"></span
+                    ><span class="mate-loser">#</span>
+                  </div>
                   <canvas id="piece-fx" hidden aria-hidden="true"></canvas>
                   <div id="stand-fx" hidden aria-hidden="true"></div>
                 </div>
@@ -125,6 +139,25 @@
               </button>
               <button id="replay-last" class="tool-button">К последнему</button>
             </nav>
+            <section
+              id="match-review"
+              class="glass"
+              hidden
+              aria-label="Разбор партии"
+            >
+              <header>
+                <h2>Разбор партии</h2>
+                <button class="tool-button" id="run-analysis">
+                  Разобрать партию
+                </button>
+              </header>
+              <p id="analysis-status" role="status"></p>
+              <div id="accuracy-summary" hidden>
+                <span>Точность белых <strong id="accuracy-w"></strong></span
+                ><span>Точность чёрных <strong id="accuracy-b"></strong></span>
+              </div>
+              <div id="analysis-rows"></div>
+            </section>
           </section>
           <aside class="sidebar" aria-label="Стенды и журнал партии">
             <section class="stand-panel glass" aria-labelledby="stands-title">
@@ -365,11 +398,11 @@
         <button class="sample crimson" data-sample="w">
           <i data-icon="play"></i>King Crimson</button
         ><button class="sample world" data-sample="b">
-            <i data-icon="play"></i>The World
-          </button>
-          <button class="sample dust" data-sample="dust">
-            <i data-icon="play"></i>Голос Киры
-          </button>
+          <i data-icon="play"></i>The World
+        </button>
+        <button class="sample dust" data-sample="dust">
+          <i data-icon="play"></i>Голос Киры
+        </button>
       </div>
       <h3 class="field-label">Предпросмотр анимации</h3>
       <div class="dialog-row">
