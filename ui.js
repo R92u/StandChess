@@ -1495,6 +1495,37 @@
     $('online-feedback').hidden = !text;
     $('online-feedback').textContent = text;
   }
+  let inviteMode = navigator.userAgent.includes('StandChessAndroid/') ? 'qr' : 'link';
+  function renderInvitation(id) {
+    const link = StandRoom.invitation(id);
+    const qr = inviteMode === 'qr';
+    $('invite-url').value = link;
+    $('invite-link').hidden = qr;
+    $('invite-qr').hidden = !qr;
+    $('invite-link-mode').setAttribute('aria-pressed', String(!qr));
+    $('invite-qr-mode').setAttribute('aria-pressed', String(qr));
+    const canvas = $('invite-qr').querySelector('canvas');
+    if (!qr || canvas.dataset.invite === link) return;
+    const code = qrcodegen.QrCode.encodeText(link, qrcodegen.QrCode.Ecc.MEDIUM);
+    const scale = 8, margin = 4;
+    canvas.width = canvas.height = (code.size + margin * 2) * scale;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#111';
+    for (let y = 0; y < code.size; y++) {
+      for (let x = 0; x < code.size; x++) {
+        if (code.getModule(x, y)) ctx.fillRect((x + margin) * scale, (y + margin) * scale, scale, scale);
+      }
+    }
+    canvas.dataset.invite = link;
+  }
+  for (const mode of ['link', 'qr']) {
+    $('invite-' + mode + '-mode').onclick = () => {
+      inviteMode = mode;
+      renderRoomDialog();
+    };
+  }
   function renderRoomDialog() {
     const active = Boolean(online.id),
       invite = invitedRoom();
@@ -1513,20 +1544,20 @@
         ? 'Войти за чёрных'
         : 'Создать комнату';
     if (active) {
-      $('invite-url').value = roomURL(online.id).href;
+      renderInvitation(online.id);
       $('online-info').textContent = !online.connected
         ? 'Восстанавливаем связь с комнатой…'
         : online.ready
           ? 'Оба игрока в комнате. Вы играете за ' +
             (online.side === 'w' ? 'белых.' : 'чёрных.')
-          : 'Вы играете за белых. Отправьте другу ссылку, чтобы он занял место чёрных.';
+          : 'Вы играете за белых. Пригласите друга за чёрных.';
     } else {
       $('online-info').textContent =
         location.protocol === 'file:'
           ? 'Для игры по сети откройте StandChess на сервере.'
           : invite
             ? 'Вас пригласили в партию. Войдите в комнату, чтобы играть за чёрных.'
-            : 'Создайте комнату и отправьте другу ссылку. Вы играете за белых, друг — за чёрных.';
+            : 'Создайте комнату и пригласите друга по ссылке или QR-коду. Вы играете за белых, друг — за чёрных.';
     }
   }
   function revealRoom() {

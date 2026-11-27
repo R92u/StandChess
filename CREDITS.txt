@@ -65,6 +65,11 @@ chess.js 0.10.3 — Jeff Hlywa и участники проекта. BSD-2-Claus
 https://github.com/jhlywa/chess.js/tree/v0.10.3
 Текст лицензии в vendor/chess-LICENSE.txt.
 
+QR-коды
+Project Nayuki, QR Code generator library (MIT).
+https://www.nayuki.io/page/qr-code-generator-library
+Текст лицензии в vendor/qrcodegen.js.
+
 Шрифты
 Inter — Rasmus Andersson. Barlow Condensed — Jeremy Tribby.
 SIL Open Font License 1.1. Тексты лицензий в assets/fonts.

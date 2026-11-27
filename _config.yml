@@ -1,0 +1,6 @@
+exclude:
+  - android
+  - test
+  - server.js
+  - package.json
+  - README.md

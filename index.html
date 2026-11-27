@@ -16,6 +16,7 @@
     <script defer src="piece-effects.js"></script>
     <script defer src="board-fx.js"></script>
     <script defer src="online.js"></script>
+    <script defer src="vendor/qrcodegen.js"></script>
     <script defer src="ui.js"></script>
   </head>
   <body>
@@ -337,19 +338,25 @@
         </button>
       </div>
       <p id="online-info" role="status">
-        Создайте комнату и отправьте другу ссылку. Вы играете за белых, друг —
-        за чёрных.
+        Создайте комнату и пригласите друга по ссылке или QR-коду.
       </p>
       <div id="invite-tools" hidden>
-        <label for="invite-url">Ссылка на комнату</label>
-        <div class="invite-row">
-          <input id="invite-url" readonly spellcheck="false" /><button
+          <div class="invite-modes" role="group" aria-label="Приглашение в комнату">
+            <button type="button" class="tool-button" id="invite-link-mode" aria-controls="invite-link">Ссылка</button>
+            <button type="button" class="tool-button" id="invite-qr-mode" aria-controls="invite-qr">QR-код</button>
+          </div>
+          <div class="invite-row" id="invite-link">
+            <input id="invite-url" aria-label="Ссылка на комнату" readonly spellcheck="false" /><button
             class="tool-button"
             id="invite-copy"
           >
             Скопировать
           </button>
         </div>
+          <figure id="invite-qr" hidden>
+            <canvas role="img" aria-label="QR-код для входа в комнату"></canvas>
+            <figcaption>Друг может отсканировать код камерой телефона.</figcaption>
+          </figure>
       </div>
       <label id="seat-stand-label" class="stand-field"
         >Ваш стенд<select id="seat-stand"></select

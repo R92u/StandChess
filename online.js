@@ -1,6 +1,19 @@
 'use strict';
 // The invitation names the room. The private seat key stays in the player's browser.
 window.StandRoom = class StandRoom {
+  static get backend() {
+    return location.origin === 'https://r92u.github.io'
+      ? 'https://standchess-r92u.onrender.com'
+      : location.origin;
+  }
+  static invitation(id) {
+    const base = this.backend === 'https://standchess-r92u.onrender.com'
+      ? this.backend + '/'
+      : new URL(location.pathname, location.origin);
+    const url = new URL(base);
+    url.searchParams.set('room', id);
+    return url.href;
+  }
   constructor(onState, onConnection) {
     this.onState = onState;
     this.onConnection = onConnection;
@@ -26,6 +39,7 @@ window.StandRoom = class StandRoom {
   }
   async request(id, key, op, body, since, at) {
     const url =
+      StandRoom.backend +
       '/api/rooms/' +
       id +
       (op ? '/' + op : '') +
@@ -41,7 +55,7 @@ window.StandRoom = class StandRoom {
       headers,
       body: body ? JSON.stringify(body) : undefined,
       cache: 'no-store',
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(op === 'create' || op === 'join' ? 90000 : 15000),
     });
     if (response.status === 204) return null;
     const data = await response.json().catch(() => ({}));

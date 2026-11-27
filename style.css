@@ -1671,6 +1671,30 @@ dialog p {
   gap: 8px;
   margin: 7px 0 15px;
 }
+.invite-modes {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.invite-modes [aria-pressed="true"] {
+  background: #b9e2c3;
+  color: #173826;
+}
+#invite-qr {
+  margin: 0;
+  text-align: center;
+}
+#invite-qr canvas {
+  display: block;
+  width: min(232px, 100%, 38dvh);
+  height: auto;
+  margin: 0 auto 8px;
+  image-rendering: pixelated;
+}
+#invite-qr figcaption {
+  font-size: .86rem;
+  color: var(--muted);
+}
 .invite-row input {
   min-width: 0;
   flex: 1;

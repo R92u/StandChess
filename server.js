@@ -196,6 +196,7 @@ async function roomApi(req, res, url, id, op) {
 }
 
 const publicFiles = new Set([
+  '.well-known/assetlinks.json',
   'index.html',
   'style.css',
   'ui.js',
@@ -210,6 +211,7 @@ const publicFiles = new Set([
   'CREDITS.txt',
 ]);
 const types = {
+  '.json': 'application/json; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -270,7 +272,19 @@ const server = http.createServer(async (req, res) => {
       /^\/api\/rooms\/([0-9a-f]{24})(?:\/(create|join|action))?$/.exec(
         url.pathname,
       );
-    if (route) return await roomApi(req, res, url, route[1], route[2]);
+    if (route) {
+      res.setHeader('Vary', 'Origin');
+      if (req.headers.origin === 'https://r92u.github.io') {
+        res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
+        if (req.method === 'OPTIONS') {
+          res.setHeader('Access-Control-Allow-Methods', 'GET, POST');
+          res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+          res.setHeader('Access-Control-Max-Age', '600');
+          return reply(res, 204);
+        }
+      }
+      return await roomApi(req, res, url, route[1], route[2]);
+    }
     if (req.method !== 'GET' && req.method !== 'HEAD')
       return fail(res, 405, 'Метод не поддерживается.');
     return await serveFile(req, res, url.pathname);
