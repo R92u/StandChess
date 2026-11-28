@@ -402,7 +402,7 @@ main,
 .phone-tools {
   grid-row: 6;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   align-items: center;
   padding: 0 3vw;
 }
@@ -953,4 +953,90 @@ dialog .dialog-row button,
   :is(#online, #restart, #preferences, #review-dialog) {
     background-image: url('sky.webp');
   }
+}
+
+.arena-layout .play-column {
+  --stands-width: clamp(280px, 27vw, 388px);
+  --stands-gap: clamp(14px, 2vw, 28px);
+  width: min(100%, calc(min(860px, max(240px, 100svh - 188px)) + var(--stands-gap) + var(--stands-width) + 32px));
+  max-width: none;
+  padding-inline: 16px;
+  grid-template-columns: minmax(0, 1fr) var(--stands-width);
+  column-gap: var(--stands-gap);
+}
+.play-column > .board-shell,
+.play-column > .replay,
+.play-column > .phone-tools { grid-column: 1; }
+.play-column > .arena-heading { grid-column: 1 / -1; }
+.play-column > #phone-powers {
+  grid-column: 2;
+  grid-row: 3;
+  align-self: center;
+  min-width: 0;
+}
+#phone-powers .stand-card[data-edge='top'] { order: 1; }
+#phone-powers .stand-card[data-edge='bottom'] { order: 2; }
+#phone-powers .stand-panel {
+  display: flex;
+  flex-direction: column;
+  padding: clamp(10px, 1.2vw, 18px);
+  background: #10283de8;
+  border: 1px solid #769cb848;
+  box-shadow: 0 8px 28px #04132144;
+  backdrop-filter: none;
+}
+#phone-powers .panel-heading { flex-wrap: wrap; gap: 8px; }
+#phone-powers .panel-emblem,
+#phone-powers .stand-panel:after,
+#phone-powers .stand-panel:before,
+.stand-portrait { display: none; }
+#phone-powers .stand-body h3 { font-size: clamp(1.35rem, 2vw, 1.9rem); }
+#phone-powers .stand-actions { flex-wrap: wrap; }
+#stand-info { max-width: min(360px, 92vw); padding: 22px; }
+#stand-info h2 { padding-right: 32px; }
+#stand-info p { margin: 12px 0 0; line-height: 1.45; }
+@media (max-width: 760px), (pointer: coarse) and (max-height: 560px) {
+  .arena-layout .play-column {
+    width: min(100%, 620px);
+    padding-inline: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 48px minmax(4px, 1fr) auto auto auto auto minmax(4px, .65fr) 42px 55px;
+    column-gap: 0;
+  }
+  .play-column > .board-shell { grid-row: 4; }
+  .play-column > .replay { grid-row: 8; }
+  .play-column > .phone-tools { grid-row: 9; }
+  .play-column > #phone-powers, #phone-powers .stand-panel,
+  #phone-powers .panel-heading { display: contents; }
+  #phone-powers .panel-heading > div, #phone-powers .art-scene,
+  #phone-powers .stand-body p, #phone-powers .stand-body .power-name { display: none; }
+  #phone-powers #choose-stands {
+    grid-area: 6 / 1; justify-self: end; margin: 0 8px 0 0; padding: 5px 9px; font-size: .72rem;
+  }
+  #phone-powers .stand-card {
+    grid-column: 1; display: grid; grid-template-columns: 40px minmax(0, 1fr) minmax(100px, 35%);
+    align-items: center; gap: 8px; padding: 6px 9px; margin: 4px 6px; border-radius: 9px;
+  }
+  #phone-powers .stand-card[data-edge="top"] { grid-row: 3; }
+  #phone-powers .stand-card[data-edge="bottom"] { grid-row: 5; }
+  #phone-powers .stand-portrait {
+    display: block; width: 40px; height: 40px; background-position: center; background-size: cover;
+    border-radius: 6px; border: 1px solid #b2c6da50;
+  }
+  #phone-powers .stand-body { min-height: 0; padding: 0; }
+  #phone-powers .side-label { font-size: .6rem; letter-spacing: .07em; gap: 4px; }
+  #phone-powers .stand-body h3 {
+    margin: 3px 0 0; font-size: clamp(.87rem, 3.6vw, 1.15rem); line-height: 1.12;
+    overflow-wrap: anywhere; letter-spacing: -.02em; max-width: 100%;
+  }
+  #phone-powers .stand-actions { display: grid; gap: 3px; padding: 0; border: 0; background: none; }
+  #phone-powers .power-button, #phone-powers [id^="merge-"] {
+    width: 100%; min-width: 0; min-height: 30px; padding: 4px; font-size: .7rem;
+  }
+  #phone-powers .mana { min-width: 0; }
+  #phone-powers .mana-caption { font-size: .62rem; }
+  #phone-powers .mana-track { margin-top: 2px; height: 3px; }
+}
+@media (pointer: coarse) and (max-height: 560px) and (orientation: landscape) {
+  .arena-layout .play-column { width: min(100%, max(240px, 100dvh - 55px)); }
 }

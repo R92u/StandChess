@@ -233,3 +233,26 @@ test('The World keeps the same tournament clock running through the first extra 
   assert.equal(data.clock.running, 'b');
   assert.deepEqual(data.clock.left, { w: THREE_HOURS - 3000, b: THREE_HOURS });
 });
+
+test('leaving ends just this game and repeated exits award one point', async () => {
+  const { cup } = await setup(2);
+  await cup.handle('start', null, player(0));
+  const match = (await view(cup)).rounds[0][0];
+  const white = user(match.players[0]), black = user(match.players[1]);
+  const id = match.id + '-1';
+  await cup.handle('enter', id, white, { stand: 'world' });
+  await assert.rejects(cup.handle('leave', id, player(3)), { status: 403 });
+  await cup.handle('enter', id, black, { stand: 'crimson' });
+  await Promise.all([cup.handle('leave', id, white), cup.handle('leave', id, white)]);
+  const closed = await cup.handle('poll', id, black);
+  assert.deepEqual(closed.clock.ended, { reason: 'resign', winner: 'b' });
+  assert.equal(closed.clock.running, null);
+  assert.deepEqual(closed.series.score, [0, 1]);
+  const nextId = match.id + '-2';
+  await cup.handle('enter', nextId, black, { stand: 'world' });
+  await cup.handle('leave', nextId, black);
+  const waiting = await cup.handle('enter', nextId, white, { stand: 'world' });
+  assert.equal(waiting.clock.running, null);
+  assert.equal(waiting.clock.ended.reason, 'resign');
+  assert.deepEqual(waiting.series.score, [1, 1]);
+});

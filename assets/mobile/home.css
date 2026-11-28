@@ -457,3 +457,32 @@ html[data-view='arena'] #home-screen {
     padding-inline: 6px;
   }
 }
+
+#duel-alert {
+  position: fixed;
+  inset: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) auto auto;
+  z-index: 1500;
+  width: min(300px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid #477291;
+  border-radius: 12px;
+  color: #f2f7fb;
+  background: linear-gradient(135deg, #0e2439, #143856);
+  box-shadow: 0 8px 28px #020f1f96;
+}
+#duel-alert[hidden], #duel-alert p:empty { display: none; }
+#duel-alert header { display: flex; align-items: center; justify-content: space-between; }
+#duel-alert h2 { margin: 0; font-size: 1.08rem; }
+#duel-alert strong { color: #d5e7f4; }
+#duel-alert label { font-size: .8rem; }
+#duel-alert .alert-close { color: #cadae4; font-size: 1.4rem; padding: 0 6px; }
+#duel-alert .social-controls { display: flex; }
+#duel-alert p { color: #ffdb9c; }
+@media (prefers-reduced-motion: no-preference) {
+  #duel-alert:not([hidden]) { animation: duel-in .22s ease-out; }
+  @keyframes duel-in { from { opacity: 0; transform: translateX(24px); } }
+}

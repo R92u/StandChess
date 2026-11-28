@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-view="home">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -8,8 +8,8 @@
     <link rel="icon" href="assets/mark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="assets/fonts/fonts.css" />
     <link rel="stylesheet" href="style.css?v=2" />
-    <link rel="stylesheet" href="assets/mobile/layout.css?v=5" />
-    <link rel="stylesheet" href="assets/mobile/home.css" />
+    <link rel="stylesheet" href="assets/mobile/layout.css?v=6" />
+    <link rel="stylesheet" href="assets/mobile/home.css?v=2" />
     <link rel="stylesheet" href="assets/mobile/tournament.css" />
     <script defer src="vendor/chess.min.js"></script>
     <script defer src="variants.js?v=5"></script>
@@ -18,12 +18,12 @@
     <script defer src="effects.js?v=2"></script>
     <script defer src="piece-effects.js"></script>
     <script defer src="board-fx.js?v=2"></script>
-    <script defer src="online.js?v=3"></script>
+    <script defer src="online.js?v=4"></script>
     <script defer src="vendor/qrcodegen.js"></script>
     <script defer src="board-motion.js?v=2"></script>
     <script defer src="gojo-fx.js?v=4"></script>
-    <script defer src="home.js?v=2"></script>
-    <script defer src="ui.js?v=10"></script>
+    <script defer src="home.js?v=3"></script>
+    <script defer src="ui.js?v=11"></script>
     <script defer src="tournament-ui.js"></script>
   </head>
   <body>
@@ -160,6 +160,7 @@
       <div id="social-body"></div>
       <p id="social-feedback" role="status"></p>
     </dialog>
+    <aside id="duel-alert" class="social-panel" aria-label="Входящий вызов" hidden></aside>
     <div class="app-shell">
       <main id="arena">
         <div class="arena-layout">
@@ -218,6 +219,98 @@
                 <i data-icon="tower"></i><span></span>
               </div>
             </div>
+            <aside id="phone-powers" aria-label="Способности стендов">
+        <section class="stand-panel glass" aria-labelledby="stands-title">
+          <header class="panel-heading">
+            <span class="panel-emblem"><i data-icon="spark"></i></span>
+            <div>
+              <h2 id="stands-title">Стенды</h2>
+              <p id="stand-cost">+10 маны за свой ход · 100 за активацию</p>
+            </div>
+            <button id="choose-stands" class="tool-button">
+              Выбрать стенды
+            </button>
+          </header>
+          <article class="stand-card crimson" id="card-w">
+            <button class="stand-portrait" data-side="w" aria-haspopup="dialog"></button>
+            <div class="stand-scene">
+              <div class="art-scene" aria-hidden="true">
+                <img src="assets/art/king-crimson.webp" alt="" />
+              </div>
+              <div class="stand-body">
+                <div class="side-label">
+                  <span class="side-stone white"></span>БЕЛЫЕ
+                </div>
+                <h3 lang="en">King Crimson</h3>
+                <div class="power-name">
+                  <i data-icon="rewind"></i>Стирание времени
+                </div>
+                <p>
+                  Стирает последний ход чёрных и возвращает фигуры на место.
+                </p>
+              </div>
+            </div>
+            <div class="stand-actions">
+              <button class="power-button" id="power-w">Стереть ход</button>
+              <div
+                class="mana"
+                id="mana-w"
+                role="meter"
+                aria-label="Мана белых"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0"
+              >
+                <span class="mana-caption" aria-hidden="true"
+                  >Мана <b>0 / 100</b></span
+                >
+                <span class="mana-track" aria-hidden="true"
+                  ><span class="mana-fill"></span
+                ></span>
+              </div>
+            </div>
+          </article>
+          <article class="stand-card world" id="card-b">
+            <button class="stand-portrait" data-side="b" aria-haspopup="dialog"></button>
+            <div class="stand-scene">
+              <div class="art-scene" aria-hidden="true">
+                <img src="assets/art/the-world.webp" alt="" />
+              </div>
+              <div class="stand-body">
+                <div class="side-label">
+                  <span class="side-stone black"></span>ЧЁРНЫЕ
+                </div>
+                <h3 lang="en">The World</h3>
+                <div class="power-name">
+                  <i data-icon="clock"></i>Остановка времени
+                </div>
+                <p>Даёт чёрным два хода подряд. Шах завершает остановку.</p>
+              </div>
+            </div>
+            <div class="stand-actions">
+              <button class="power-button" id="power-b">
+                Остановить время
+              </button>
+              <div
+                class="mana"
+                id="mana-b"
+                role="meter"
+                aria-label="Мана чёрных"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0"
+              >
+                <span class="mana-caption" aria-hidden="true"
+                  >Мана <b>0 / 100</b></span
+                >
+                <span class="mana-track" aria-hidden="true"
+                  ><span class="mana-fill"></span
+                ></span>
+              </div>
+            </div>
+          </article>
+        </section>
+            </aside>
             <div class="match-footer">
               <span
                 ><i data-icon="players"></i
@@ -271,9 +364,6 @@
               </button>
               <button data-panel="phone-history">
                 <i data-icon="history"></i>Журнал
-              </button>
-              <button data-panel="phone-powers">
-                <i data-icon="spark"></i>Стенды
               </button>
               <button id="phone-flip"><i data-icon="flip"></i>Повернуть</button>
             </nav>
@@ -383,9 +473,6 @@
         </aside>
       </div>
       <div class="drawer-group">
-        <button data-panel="phone-powers">
-          <i data-icon="spark"></i>Способности стендов
-        </button>
         <button data-panel="phone-history">
           <i data-icon="history"></i>История партии
         </button>
@@ -400,107 +487,10 @@
         </button>
       </div>
     </dialog>
-    <dialog
-      class="phone-sheet"
-      id="phone-powers"
-      aria-label="Способности стендов"
-    >
-      <button
-        class="icon-button close sheet-close"
-        aria-label="Свернуть способности"
-      >
-        <i data-icon="x"></i>
-      </button>
-      <div id="phone-power-slot">
-        <section class="stand-panel glass" aria-labelledby="stands-title">
-          <header class="panel-heading">
-            <span class="panel-emblem"><i data-icon="spark"></i></span>
-            <div>
-              <h2 id="stands-title">Стенды</h2>
-              <p id="stand-cost">+10 маны за свой ход · 100 за активацию</p>
-            </div>
-            <button id="choose-stands" class="tool-button">
-              Выбрать стенды
-            </button>
-          </header>
-          <article class="stand-card crimson" id="card-w">
-            <div class="stand-scene">
-              <div class="art-scene" aria-hidden="true">
-                <img src="assets/art/king-crimson.webp" alt="" />
-              </div>
-              <div class="stand-body">
-                <div class="side-label">
-                  <span class="side-stone white"></span>БЕЛЫЕ
-                </div>
-                <h3 lang="en">King Crimson</h3>
-                <div class="power-name">
-                  <i data-icon="rewind"></i>Стирание времени
-                </div>
-                <p>
-                  Стирает последний ход чёрных и возвращает фигуры на место.
-                </p>
-              </div>
-            </div>
-            <div class="stand-actions">
-              <button class="power-button" id="power-w">Стереть ход</button>
-              <div
-                class="mana"
-                id="mana-w"
-                role="meter"
-                aria-label="Мана белых"
-                aria-valuemin="0"
-                aria-valuemax="100"
-                aria-valuenow="0"
-              >
-                <span class="mana-caption" aria-hidden="true"
-                  >Мана <b>0 / 100</b></span
-                >
-                <span class="mana-track" aria-hidden="true"
-                  ><span class="mana-fill"></span
-                ></span>
-              </div>
-            </div>
-          </article>
-          <article class="stand-card world" id="card-b">
-            <div class="stand-scene">
-              <div class="art-scene" aria-hidden="true">
-                <img src="assets/art/the-world.webp" alt="" />
-              </div>
-              <div class="stand-body">
-                <div class="side-label">
-                  <span class="side-stone black"></span>ЧЁРНЫЕ
-                </div>
-                <h3 lang="en">The World</h3>
-                <div class="power-name">
-                  <i data-icon="clock"></i>Остановка времени
-                </div>
-                <p>Даёт чёрным два хода подряд. Шах завершает остановку.</p>
-              </div>
-            </div>
-            <div class="stand-actions">
-              <button class="power-button" id="power-b">
-                Остановить время
-              </button>
-              <div
-                class="mana"
-                id="mana-b"
-                role="meter"
-                aria-label="Мана чёрных"
-                aria-valuemin="0"
-                aria-valuemax="100"
-                aria-valuenow="0"
-              >
-                <span class="mana-caption" aria-hidden="true"
-                  >Мана <b>0 / 100</b></span
-                >
-                <span class="mana-track" aria-hidden="true"
-                  ><span class="mana-fill"></span
-                ></span>
-              </div>
-            </div>
-          </article>
-        </section>
-      </div>
+    <dialog id="stand-info" aria-labelledby="stand-info-name">
+      <button class="icon-button close" aria-label="Закрыть"><i data-icon="x"></i></button>
+      <h2 id="stand-info-name"></h2>
+      <p id="stand-info-description"></p>
     </dialog>
     <dialog class="phone-sheet" id="phone-history" aria-label="История партии">
       <button

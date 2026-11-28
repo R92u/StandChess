@@ -167,7 +167,7 @@ window.StandRoom = class StandRoom {
       if (this.id === id) this.apply(data);
     } catch (e) {
       if (this.id !== id) return;
-      if (e.status === 404 || e.status === 403) {
+      if ([403, 404, 410].includes(e.status)) {
         this.reset();
         this.onConnection(e.message);
         return;

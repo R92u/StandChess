@@ -505,6 +505,8 @@
       playing = !verdict && mayPlay();
     board.classList.toggle('house-board', hasRoom);
     board.classList.toggle('flipped', flipped);
+    $('card-w').dataset.edge = flipped ? 'top' : 'bottom';
+    $('card-b').dataset.edge = flipped ? 'bottom' : 'top';
     const abilityTargets = targeting
       ? gojoMode
         ? gojoMode === 'purple'
@@ -1272,7 +1274,7 @@
     $('turn').classList.toggle('finished', Boolean(result));
     document.body.dataset.timeStopped = String(Boolean(s.freeze) && !result);
     $('move-number').textContent = 'Ход ' + s.fen.split(' ')[5];
-    if ($('phone-powers').open) renderPowers(game, result);
+    renderPowers(game, result);
     $('leave-match').hidden = !online.id;
     $('cup-clocks').hidden = !online.tournament;
     $('cup-report-link').hidden = !online.tournament;
@@ -1354,6 +1356,9 @@
       if (card.dataset.stand !== id) {
         card.dataset.stand = id;
         card.className = 'stand-card ' + id;
+        const portrait = card.querySelector('.stand-portrait');
+        portrait.style.backgroundImage = 'url("assets/art/' + stand.art + '-avatar.webp")';
+        portrait.setAttribute('aria-label', (side === 'w' ? 'Белые' : 'Чёрные') + ' · ' + stand.name + ' · описание способности');
         card.querySelector('.art-scene img').src =
           'assets/art/' + stand.art + '.webp';
         card.querySelector('h3').textContent = stand.name;
@@ -1775,8 +1780,8 @@
       'translate3d(' +
       (x - size / 2) +
       'px,' +
-      (y - size * 1.4) +
-      'px,0) scale(2)';
+      (y - size * 1.26) +
+      'px,0) scale(1.7)';
     const col = Math.floor(((x - g.grid.left) * g.cols) / g.grid.width);
     const row = Math.floor(((y - g.grid.top) * 8) / g.grid.height);
     const tile =
@@ -2122,7 +2127,6 @@
     button.onclick = () => {
       button.closest('dialog')?.close();
       if (button.dataset.panel === 'phone-history') renderLog();
-      if (button.dataset.panel === 'phone-powers') renderPowers();
       $(button.dataset.panel).showModal();
     };
   for (const button of document.querySelectorAll('[data-command]'))
@@ -2130,20 +2134,20 @@
       button.closest('dialog')?.close();
       $(button.dataset.command).click();
     };
+  for (const portrait of document.querySelectorAll('.stand-portrait'))
+    portrait.onclick = () => {
+      const card = portrait.closest('.stand-card');
+      $('stand-info-name').textContent = card.querySelector('h3').textContent;
+      $('stand-info-description').textContent = card.querySelector('.power-name').textContent +
+        '. ' + card.querySelector('.stand-body p').textContent;
+      $('stand-info').showModal();
+    };
   $('phone-flip').onclick = () => $('flip').click();
   $('phone-menu').addEventListener(
     'click',
     (e) => {
       if (e.target.closest('#new-game,#online-open,.rail a'))
         $('phone-menu').close();
-    },
-    true,
-  );
-  $('phone-powers').addEventListener(
-    'click',
-    (e) => {
-      if (e.target.closest('#choose-stands,.power-button,button[id^="merge-"]'))
-        $('phone-powers').close();
     },
     true,
   );
@@ -2164,7 +2168,8 @@
         online.tournament ? 'cup' : online.duel ? 'duel' : 'room',
         id,
       );
-    url.hash = 'arena';
+    url.searchParams.delete('online');
+    url.hash = id ? 'arena' : 'home';
     return url;
   }
   function roomFeedback(text = '') {
@@ -2264,9 +2269,8 @@
   }
   function roomConnectionChanged(message) {
     if (message) {
-      restoreLocalRoom();
-      revealRoom();
-      roomFeedback(message);
+      detachMatch();
+      toast(message);
     } else render();
   }
   function roomActionError(error) {
@@ -2276,6 +2280,12 @@
     window.GojoFX.stop();
     const previous = game.state;
     game = StandGame.restore(data.state);
+    if (data.clock?.ended?.reason === 'resign') {
+      detachMatch();
+      toast('Игрок вышел. Победа ' + (data.clock.ended.winner === 'w' ? 'белых.' : 'чёрных.'));
+      window.StandCup?.open();
+      return;
+    }
     if (data.clock?.ended?.reason === 'timeout')
       game.result = () =>
         'Время истекло. Победа ' +
@@ -2378,21 +2388,40 @@
   }
   $('online-open').onclick = revealRoom;
   $('room-enter').onclick = () => enterRoom(invitedRoom() ? 'join' : 'create');
-  function leaveMatch() {
-    if (enteringRoom) return;
-    const cup = online.tournament;
-    if (cup && !online.ready)
-      online.request(online.id, null, 'depart').catch(() => {});
-    $('online').close();
+  function detachMatch() {
+    for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
     restoreLocalRoom();
     stopAudio();
-    if (cup) window.StandCup?.open();
+  }
+  async function leaveMatch() {
+    if (enteringRoom) return;
+    const { id, duel, tournament } = online;
+    enteringRoom = true;
+    try {
+      if (id) {
+        const key = duel ? await (await window.StandProfile.load()).token() : online.key;
+        await online.request(id, key, 'leave');
+      }
+    } catch (error) {
+      if (![404, 410].includes(error.status)) {
+        const message = error.message || 'Не удалось завершить партию. Повторите выход.';
+        if ($('online').open) roomFeedback(message);
+        else toast(message);
+        return;
+      }
+    } finally {
+      enteringRoom = false;
+    }
+    if (online.id !== id) return;
+    detachMatch();
+    if (tournament) window.StandCup?.open();
   }
   $('leave-match').onclick = leaveMatch;
   $('room-leave').onclick = leaveMatch;
   $('room-board').addEventListener('click', () => window.StandHome.board());
   window.StandDuels = {
     tournament: () => online.tournament,
+    active: () => online.id,
     async enterTournament(id, token, stand, request) {
       if (online.id === id && online.tournament) {
         window.StandHome.board();
@@ -2403,6 +2432,8 @@
       enteringRoom = true;
       try {
         const data = await request('games/' + id + '/enter', { stand });
+        if (data.clock?.ended?.reason === 'resign')
+          throw Error('Игрок вышел. Эта турнирная партия завершена.');
         online.reset();
         online.id = id;
         online.tournament = { token, id };
@@ -2427,7 +2458,7 @@
       }
     },
     leave() {
-      if (online.duel || online.tournament) leaveMatch();
+      if (online.duel || online.tournament) detachMatch();
     },
   };
   $('invite-copy').onclick = async () => {

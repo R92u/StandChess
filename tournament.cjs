@@ -260,7 +260,17 @@ class Tournament {
           return null;
         }
         let changed = false;
-        if (!g.initial && (op === 'enter' || op === 'poll')) {
+        if (op === 'leave') {
+          if (g.ended) return null;
+          if (!g.stands[side]) throw fail(403, 'Сначала войдите в лобби.');
+          g = { ...g, left: clockView(g, now).left };
+          conclude(t, m, g, 'resign', other(side));
+          if (!(await this.store.save([[record, g], [meta, t]]))) continue;
+          this.presence.delete(id + ':w');
+          this.presence.delete(id + ':b');
+          return null;
+        }
+        if (!g.initial && !g.ended && (op === 'enter' || op === 'poll')) {
           if (op === 'enter' && !Object.hasOwn(STANDS, body.stand))
             throw fail(400, 'Выберите стенд.');
           if (!g.stands[side] && op !== 'enter')

@@ -55,6 +55,15 @@ async function duelSeat(id, token) {
     instance: fields.instance?.stringValue,
   };
 }
+async function removeDuel(id, token) {
+  const response = await fetch(store + id, {
+    method: 'DELETE',
+    headers: { Authorization: 'Bearer ' + token },
+    signal: timeout(),
+  });
+  if (!response.ok && response.status !== 404)
+    throw err(response.status >= 500 ? 503 : 403, 'Не удалось закрыть приглашение.');
+}
 async function mobileLogin(op, data) {
   const now = Date.now();
   for (const [key, entry] of codes) if (entry.expires <= now) codes.delete(key);
@@ -93,4 +102,4 @@ async function mobileLogin(op, data) {
   setTimeout(() => codes.delete(code), 120000).unref();
   return { code };
 }
-module.exports = { duelSeat, mobileLogin, identity };
+module.exports = { duelSeat, removeDuel, mobileLogin, identity };

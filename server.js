@@ -3,7 +3,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomBytes } = require('node:crypto');
-const { duelSeat, mobileLogin } = require('./accounts.cjs');
+const { duelSeat, removeDuel, mobileLogin } = require('./accounts.cjs');
 const { StandGame, STANDS } = require('./engine');
 const { Tournament, account: tournamentAccount } = require('./tournament.cjs');
 const tournament = new Tournament();
@@ -15,9 +15,12 @@ const {
   playAction,
 } = require('./room-game.cjs');
 const rooms = new Map();
+const closedRooms = new Map();
 const duelInstance = randomBytes(16).toString('hex');
 const ttl = 24 * 60 * 60 * 1000;
 const timer = setInterval(() => {
+  for (const [id, closedAt] of closedRooms)
+    if (Date.now() - closedAt > ttl) closedRooms.delete(id);
   for (const [id, room] of rooms)
     if (Date.now() - room.seen > ttl) rooms.delete(id);
 }, 60000);
@@ -61,6 +64,8 @@ async function roomApi(req, res, url, id, op) {
     )
       return fail(res, 400, 'Неизвестный стенд.');
   }
+  if (closedRooms.has(id))
+    return fail(res, 410, 'Игрок вышел. Партия завершена.');
   let room = rooms.get(id);
   if (!room && op === 'create') {
     if (rooms.size >= 500)
@@ -100,6 +105,11 @@ async function roomApi(req, res, url, id, op) {
         ? 'Оба места в комнате заняты.'
         : 'У вас нет места в этой комнате.',
     );
+  if (op === 'leave') {
+    rooms.delete(id);
+    closedRooms.set(id, Date.now());
+    return reply(res, 204);
+  }
   room.seen = Date.now();
   if (op === 'action') {
     let action;
@@ -212,16 +222,16 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     if (url.pathname === '/healthz') return reply(res, 200, { ok: true });
     const route =
-      /^\/api\/rooms\/([0-9a-f]{24})(?:\/(create|join|action))?$/.exec(
+      /^\/api\/rooms\/([0-9a-f]{24})(?:\/(create|join|action|leave))?$/.exec(
         url.pathname,
       );
-    const duel = /^\/api\/duels\/([0-9a-f]{24})(?:\/(enter|action))?$/.exec(
+    const duel = /^\/api\/duels\/([0-9a-f]{24})(?:\/(enter|action|leave))?$/.exec(
       url.pathname,
     );
     const login = /^\/api\/account\/(transfer|redeem)$/.exec(url.pathname);
     const instance = url.pathname === '/api/duels/instance';
     const cup =
-      /^\/api\/tournament(?:\/(register|withdraw|start)|\/games\/(r[1-9]\d*m[1-9]\d*-[1-9]\d*)(?:\/(enter|action|depart))?)?$/.exec(
+      /^\/api\/tournament(?:\/(register|withdraw|start)|\/games\/(r[1-9]\d*m[1-9]\d*-[1-9]\d*)(?:\/(enter|action|depart|leave))?)?$/.exec(
         url.pathname,
       );
     if (route || duel || login || instance || cup) {
@@ -283,13 +293,21 @@ const server = http.createServer(async (req, res) => {
       }
       if (duel) {
         const id = 'duel:' + duel[1];
-        if (duel[2] !== 'enter')
+        if (closedRooms.has(id))
+          return fail(res, 410, 'Игрок вышел. Дуэль завершена.');
+        if (!['enter', 'leave'].includes(duel[2]))
           return await roomApi(req, res, url, id, duel[2]);
         if (req.method !== 'POST') return fail(res, 405, 'Требуется POST.');
-        const access = await duelSeat(
-          duel[1],
-          /^Bearer (\S+)$/.exec(req.headers.authorization || '')?.[1],
-        );
+        const token = /^Bearer (\S+)$/.exec(req.headers.authorization || '')?.[1];
+        const access = await duelSeat(duel[1], token);
+        if (duel[2] === 'leave') {
+          await removeDuel(duel[1], token);
+          rooms.delete(id);
+          closedRooms.set(id, Date.now());
+          return reply(res, 204);
+        }
+        if (closedRooms.has(id))
+          return fail(res, 410, 'Игрок вышел. Дуэль завершена.');
         let room = rooms.get(id);
         if (!room) {
           if (

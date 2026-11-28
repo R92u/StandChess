@@ -38,6 +38,12 @@
       $('hero-play').firstChild.textContent = started ? 'К доске ' : 'Играть ';
     },
   };
+  const initial = new URL(location.href);
+  if ((!initial.hash || initial.hash === '#arena') &&
+      !['room', 'duel', 'cup', 'online'].some(key => initial.searchParams.has(key))) {
+    initial.hash = 'home';
+    history.replaceState(null, '', initial);
+  }
   route();
   window.addEventListener('hashchange', route);
   const titles = {
@@ -120,8 +126,94 @@
   }
   const mine = () => account?.state.user?.uid;
   const other = (r) => (r.from === mine() ? r.to : r.from);
+  let instance, checkingInstance, verifiedAt = 0;
   const fresh = (r) =>
-    (r.accepted || r.created)?.toMillis() > Date.now() - 86400000 || !r.created;
+    (!instance || r.status !== 'accepted' || r.instance === instance) &&
+    ((r.accepted || r.created)?.toMillis() > Date.now() - 86400000 || !r.created);
+  function refreshInstance() {
+    if (checkingInstance || Date.now() - verifiedAt < 30000 ||
+        !account?.state.duels.some(r => r.status === 'accepted')) return;
+    verifiedAt = Date.now();
+    checkingInstance = fetch(window.StandRoom.backend + '/api/duels/instance', {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(90000),
+    }).then(async response => {
+      if (response.ok) {
+        instance = (await response.json()).instance;
+        paint();
+      }
+    }).catch(() => {}).finally(() => { checkingInstance = null; });
+  }
+  const alertBox = $('duel-alert');
+  const hiddenInvites = new Set();
+  let alertBusy = false;
+  function showInvite() {
+    if (alertBusy) return;
+    const invite = account.state.duels.find(r =>
+      fresh(r) && r.to === mine() && r.status === 'pending' && !hiddenInvites.has(r.id));
+    const host = Array.from(document.querySelectorAll('dialog[open]')).at(-1) || document.body;
+    if (invite && alertBox.parentNode !== host) host.append(alertBox);
+    alertBox.hidden = !invite;
+    if (!invite) {
+      alertBox.replaceChildren();
+      delete alertBox.dataset.id;
+      return;
+    }
+    const nick = account.nickOf(invite.from);
+    if (alertBox.dataset.id === invite.id) {
+      alertBox.querySelector('strong').textContent = nick;
+      return;
+    }
+    alertBox.dataset.id = invite.id;
+    const head = element('header'), heading = element('h2', 'Вызов на дуэль'),
+      close = element('button', '×', 'alert-close'),
+      sender = element('strong', nick), label = element('label', 'Ваш стенд'),
+      select = element('select'), controls = element('div', undefined, 'social-controls'),
+      feedback = element('p');
+    heading.setAttribute('role', 'status');
+    close.setAttribute('aria-label', 'Скрыть приглашение');
+    close.onclick = () => { hiddenInvites.add(invite.id); showInvite(); };
+    for (const [id, stand] of Object.entries(window.StandChess.STANDS))
+      select.add(new Option(stand.name, id));
+    select.value = 'world';
+    label.append(select);
+    head.append(heading, close);
+    feedback.setAttribute('role', 'status');
+    function control(title, primary, run) {
+      const button = element('button', title, 'social-action' + (primary ? ' primary' : ''));
+      button.onclick = async () => {
+        if (alertBusy) return;
+        alertBusy = true;
+        for (const el of alertBox.querySelectorAll('button,select')) el.disabled = true;
+        feedback.textContent = '';
+        try {
+          await run();
+        } catch (error) {
+          feedback.textContent = describe(error);
+          if (account.state.duels.some(r => r.id === invite.id && r.status === 'accepted')) {
+            await open('inbox');
+            say(describe(error));
+          }
+        } finally {
+          alertBusy = false;
+          for (const el of alertBox.querySelectorAll('button,select')) el.disabled = false;
+          showInvite();
+        }
+      };
+      controls.append(button);
+    }
+    control('Принять', true, async () => {
+      if (window.StandDuels.active()) throw Error('Сначала выйдите из текущей онлайн-партии.');
+      await account.acceptDuel(invite.id, select.value);
+      await enter(invite.id);
+      for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
+    });
+    control('Отклонить', false, () => account.dismiss('duels', invite.id));
+    alertBox.replaceChildren(head, sender, label, controls, feedback);
+  }
+  const modalObserver = new MutationObserver(() => { if (account) showInvite(); });
+  for (const dialog of document.querySelectorAll('dialog'))
+    modalObserver.observe(dialog, { attributes: true, attributeFilter: ['open'] });
   async function enter(id) {
     attemptedDuel = id;
     const token = await account.token();
@@ -204,6 +296,8 @@
   function paint() {
     if (!account) return;
     const s = account.state;
+    showInvite();
+    refreshInstance();
     const friends = s.friends.filter((r) => r.status === 'friends');
     const count =
       s.friends.filter((r) => r.to === mine() && r.status === 'pending')
@@ -413,7 +507,10 @@
   window.addEventListener('stand-social-change', () => {
     const state = account.state,
       uid = mine();
-    if (previousUid && previousUid !== uid) window.StandDuels?.leave();
+    if (previousUid && previousUid !== uid) {
+      hiddenInvites.clear();
+      window.StandDuels?.leave();
+    }
     previousUid = uid || null;
     try {
       if (uid) localStorage.setItem('standchess.profile', '1');
