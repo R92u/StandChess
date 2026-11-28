@@ -1,9 +1,9 @@
 'use strict';
 importScripts(
   'vendor/chess.min.js',
-  'variants.js?v=3',
-  'engine.js?v=3',
-  'analysis.js?v=3',
+  'variants.js?v=4',
+  'engine.js?v=4',
+  'analysis.js?v=4',
 );
 onmessage = ({ data }) => {
   try {

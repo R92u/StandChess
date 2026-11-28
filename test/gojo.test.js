@@ -69,7 +69,7 @@ test('displacements cost fifty, respect sides, distance, check and the turn', ()
   assert.equal(exposed.activate('w', 'e2', 'red:g2'), false);
 });
 
-test('the third technique is exclusively a straight five-wide Purple, with immunity and a fresh cycle', () => {
+test('the third technique hits exactly two adjacent lines with immunity and a fresh cycle', () => {
   const g = game('7k/1p4p1/8/1r6/2B1N3/8/P5P1/R3K3 w - - 0 1');
   assert.equal(g.activate('w', 'a4', 'purple:h4'), false);
   assert.ok(g.activate('w', 'c4', 'infinity'));
@@ -84,10 +84,52 @@ test('the third technique is exclusively a straight five-wide Purple, with immun
   assert.equal(g.turn(), 'b');
   assert.deepEqual(g.p.gojo, { w: 0, b: 0 });
   assert.equal(g.state.mana.w, 50);
-  for (const sq of ['b5', 'g4', 'g6', 'a2', 'g2'])
-    assert.equal(g.p.units[sq], undefined);
-  for (const sq of ['h8', 'e1', 'a1', 'b7', 'c4~1']) assert.ok(g.p.units[sq]);
-  assert.ok(g.state.events.at(-1).victims.length >= 5);
+  for (const sq of ['b5', 'g4']) assert.equal(g.p.units[sq], undefined);
+  for (const sq of ['h8', 'e1', 'a1', 'b7', 'c4~1', 'g6', 'a2', 'g2'])
+    assert.ok(g.p.units[sq]);
+  assert.equal(g.state.events.at(-1).victims.length, 2);
+  assert.equal(g.state.events.at(-1).width, 2);
+});
+
+test('all 32 paths span exactly 16 main-board squares in both directions', () => {
+  for (const vertical of [true, false]) {
+    const lanes = vertical ? 'abcdefgh' : '12345678';
+    for (const [i, lane] of [...lanes].entries()) {
+      const start = vertical ? lane + '1' : 'a' + lane;
+      const end = vertical ? lane + '8' : 'h' + lane;
+      const cells = new Set(StandGame.purpleBand(start, end));
+      assert.equal(cells.size, 16);
+      assert.deepEqual(cells, new Set(StandGame.purpleBand(end, start)));
+      const pair = [lane, lanes[i === 7 ? 6 : i + 1]];
+      for (const f of 'abcdefghi')
+        for (const r of '12345678')
+          assert.equal(
+            cells.has(f + r),
+            f !== 'i' && pair.includes(vertical ? f : r),
+          );
+    }
+  }
+});
+
+test('previous wide shots replay from their journal while new shots use the two-cell band', () => {
+  const saved = game('7k/8/8/8/2N5/8/1r5P/4K3 w - - 0 1');
+  saved.p.gojo.w = 2;
+  saved.record();
+  const old = StandGame.restore(saved.snapshot());
+  const replay = require('../analysis').apply;
+  assert.ok(
+    replay(old, {
+      kind: 'ability',
+      stand: 'gojo',
+      color: 'w',
+      target: 'a4',
+      choice: 'purple:h4',
+      victims: [],
+    }),
+  );
+  assert.equal(old.p.units.b2, undefined);
+  assert.ok(saved.activate('w', 'a4', 'purple:h4'));
+  assert.ok(saved.p.units.b2);
 });
 
 test('each Gojo advances independently and a legal ultimate can escape checkmate', () => {

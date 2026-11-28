@@ -157,7 +157,12 @@
     if (a.kind === 'move') return g.move(a.from, a.to, promotion(a));
     if (a.kind === 'merge') return g.merge(a.color);
     if (a.kind === 'debug') return g.recharge();
-    return g.activate(a.color, a.target, a.choice);
+    const archivedPurple =
+      a.stand === 'gojo' &&
+      a.choice?.startsWith('purple:') &&
+      !a.width &&
+      Array.isArray(a.victims);
+    return g.activate(a.color, a.target, a.choice, archivedPurple);
   }
   function actions(g) {
     const c = g.turn(),

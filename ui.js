@@ -513,6 +513,9 @@
           : game.targets(targeting).map(cellOf)
       : [];
     const tower = game.state.tower;
+    const purpleCells = purpleEnd
+      ? StandGame.purpleBand(targetOrigin, purpleEnd)
+      : [];
     const occupants = game.towerOccupants();
     const lastInZone = occupants.length === 1 ? occupants[0] : null;
     $('tower-info').hidden = !tower;
@@ -592,13 +595,7 @@
         cell.className = 'sq';
         if (file === 'i') cell.classList.add('room-square');
         if (square === cellOf(targetOrigin)) cell.classList.add('selected');
-        if (
-          purpleEnd &&
-          (targetOrigin[0] === purpleEnd[0]
-            ? Math.abs(file.charCodeAt(0) - targetOrigin.charCodeAt(0))
-            : Math.abs(rank - targetOrigin[1])) <= 2
-        )
-          cell.classList.add('purple-area');
+        if (purpleCells.includes(square)) cell.classList.add('purple-area');
         if (candidates.some((m) => m.to === square && m.shot))
           cell.classList.add('enigma-risk');
         if (tower && inTower(tower, square, game.state.towerRadius)) {
@@ -636,7 +633,9 @@
         const locked = piece && game.state.locked[piece.color] === square;
         if (locked) cell.classList.add('gravity-lock');
         const abilityTarget = abilityTargets.includes(square);
-        if (abilityTarget)
+        if (abilityTarget && gojoMode === 'purple')
+          cell.classList.add('gojo-aim-point');
+        else if (abilityTarget)
           cell.classList.add('stand-target', game.state.stands[targeting]);
         cell.tabIndex = square === focusSquare ? 0 : -1;
         if ((file.charCodeAt(0) - 97 + Number(rank)) % 2 === 1)
@@ -1118,7 +1117,7 @@
     let worker = null;
     try {
       if (location.protocol !== 'file:' && typeof Worker !== 'undefined')
-        worker = new Worker('analysis-worker.js?v=3');
+        worker = new Worker('analysis-worker.js?v=4');
       async function analyse(before, after, event) {
         if (worker) {
           try {
@@ -1256,7 +1255,12 @@
         gojo:
           gojoMode === 'purple'
             ? purpleEnd
-              ? 'Подсвечена полоса поражения.'
+              ? 'Под ударом ' +
+                (targetOrigin[0] === purpleEnd[0] ? 'вертикали ' : 'ряды ') +
+                [targetOrigin, StandGame.purpleBand(targetOrigin, purpleEnd)[8]]
+                  .map((sq) => sq[targetOrigin[0] === purpleEnd[0] ? 0 : 1])
+                  .join(' и ') +
+                '.'
               : targetOrigin
                 ? 'Выберите конец линии на противоположном краю.'
                 : 'Выберите край доски для Фиолетового.'
@@ -1878,7 +1882,10 @@
     stopAudio();
     if (id === 'gojo' && expected?.choice) {
       playClip('gojo-' + expected.choice.split(':')[0]);
-      window.GojoFX.play(expected, clip['gojo-' + expected.choice.split(':')[0]]);
+      window.GojoFX.play(
+        expected,
+        clip['gojo-' + expected.choice.split(':')[0]],
+      );
       return;
     }
     if (id === 'world' || id === 'crimson' || id === 'resume') {

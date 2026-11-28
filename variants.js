@@ -457,10 +457,18 @@
       }
       return list;
     }
-    function inPurple(sq, start, end) {
-      return start[0] === end[0]
-        ? Math.abs(sq.charCodeAt(0) - start.charCodeAt(0)) <= 2
-        : Math.abs(Number(sq[1]) - Number(start[1])) <= 2;
+    function purpleBand(start, end) {
+      const vertical = start[0] === end[0];
+      const dx = vertical
+        ? 0
+        : Math.sign(end.charCodeAt(0) - start.charCodeAt(0));
+      const dy = vertical ? Math.sign(Number(end[1]) - Number(start[1])) : 0;
+      const offsetX = vertical ? (start[0] === 'h' ? -1 : 1) : 0;
+      const offsetY = vertical ? 0 : start[1] === '8' ? -1 : 1;
+      const first = Array.from({ length: 8 }, (_, i) =>
+        step(start, i * dx, i * dy),
+      );
+      return first.concat(first.map((sq) => step(sq, offsetX, offsetY)));
     }
     function options(p, c) {
       const id = p.stands[c],
@@ -503,7 +511,13 @@
       }
       return list;
     }
-    function applyChoice(p, c, { target, choice }, victims) {
+    function applyChoice(
+      p,
+      c,
+      { target, choice },
+      victims,
+      legacyPurple = false,
+    ) {
       const n = branch(p),
         id = p.stands[c],
         u = n.units[target];
@@ -523,8 +537,17 @@
           return n;
         }
         if (technique === 'purple') {
+          const band = new Set(purpleBand(target, dest));
           for (const [sq, piece] of Object.entries(n.units))
-            if (piece.type !== 'k' && !phased(sq) && inPurple(sq, target, dest))
+            if (
+              piece.type !== 'k' &&
+              !phased(sq) &&
+              (legacyPurple
+                ? (target[0] === dest[0]
+                    ? Math.abs(sq.charCodeAt(0) - target.charCodeAt(0))
+                    : Math.abs(Number(sq[1]) - Number(target[1]))) <= 2
+                : band.has(sq))
+            )
               remove(n, sq);
         } else {
           const landing = phased(target) ? phaseKey(n, dest) : dest;
@@ -912,8 +935,17 @@
           return 'Нет доступной цели';
         return '';
       }
-      activate(c, target, choice) {
-        if (this.abilityBlock(c, false)) return false;
+      activate(c, target, choice, legacyPurple = false) {
+        if (
+          legacyPurple
+            ? this.p.stands[c] !== 'gojo' ||
+              this.turn() !== c ||
+              this.state.freeze ||
+              this.state.mana[c] < 50 ||
+              !choice?.startsWith('purple:')
+            : this.abilityBlock(c, false)
+        )
+          return false;
         const s = this.state,
           p = this.p,
           id = p.stands[c],
@@ -943,14 +975,17 @@
           s.position.snared[other(c)] = true;
           event.detail = 'Ловушка на следующий ход';
         } else {
-          const direct = id === 'gojo' && !this.cache.has(c);
+          const direct = id === 'gojo' && (legacyPurple || !this.cache.has(c));
           const opt = (direct ? gojoOptions(p, c) : this.choices(c)).find(
             (o) => o.target === target && o.choice === choice,
           );
-          if (!opt || (direct && !validChoice(p, c, opt, s.mana[c])))
+          if (
+            !opt ||
+            (direct && !legacyPurple && !validChoice(p, c, opt, s.mana[c]))
+          )
             return false;
           const victims = [];
-          s.position = applyChoice(p, c, opt, victims);
+          s.position = applyChoice(p, c, opt, victims, legacyPurple);
           addCalamity(event, victims);
           event.piece = s.position.units[target]?.type;
           event.detail =
@@ -967,7 +1002,8 @@
             };
             event.text = names[mode];
             event.detail = cellOf(target) + (dest ? ' → ' + dest : '');
-            if (mode === 'purple')
+            if (mode === 'purple') {
+              if (!legacyPurple) event.width = 2;
               event.victims = Object.entries(p.units)
                 .filter(([key]) => !s.position.units[key])
                 .map(([key, u]) => ({
@@ -975,6 +1011,7 @@
                   type: u.walk || u.type,
                   color: u.color,
                 }));
+            }
             if (mode === 'blue' || mode === 'red')
               event.displaced = {
                 color: p.units[target].color,
@@ -1074,6 +1111,7 @@
       }
     }
     class Match extends Base {
+      static purpleBand = purpleBand;
       constructor(fen, mana, stands, tower, towerRadius, stickyRules) {
         if (advanced(stands))
           return new ExtendedGame(

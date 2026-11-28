@@ -60,8 +60,26 @@
         flipped ? Number(sq[1]) - 0.5 : 8.5 - Number(sq[1]),
       ];
     }
-    const [x, y] = point(event.target),
+    let [x, y] = point(event.target),
       [endX, endY] = dest ? point(dest) : [x, y];
+    if (mode === 'purple') {
+      const band = window.StandChess.StandGame.purpleBand(event.target, dest);
+      const [adjX, adjY] = point(band[8]);
+      const offsetX = (adjX - x) / 2,
+        offsetY = (adjY - y) / 2;
+      x += offsetX;
+      endX += offsetX;
+      y += offsetY;
+      endY += offsetY;
+      ctx.beginPath();
+      ctx.rect(
+        Math.min(x, endX) - (offsetX ? 1 : 0.5),
+        Math.min(y, endY) - (offsetY ? 1 : 0.5),
+        offsetX ? 2 : 8,
+        offsetY ? 2 : 8,
+      );
+      ctx.clip();
+    }
     const dx = endX - x,
       dy = endY - y;
     const length = Math.hypot(dx, dy) || 1;
@@ -244,8 +262,8 @@
         if (t > 9.03) {
           ctx.lineCap = 'round';
           for (const [width, shade] of [
-            [3.9, '#862df72b'],
-            [1.65, '#bd43ff7a'],
+            [1.9, '#862df72b'],
+            [1.15, '#bd43ff7a'],
             [0.42, '#ecd1ffdf'],
           ]) {
             ctx.strokeStyle = shade;
