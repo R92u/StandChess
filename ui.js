@@ -609,6 +609,11 @@
         if (purpleCells.includes(square)) cell.classList.add('purple-area');
         if (candidates.some((m) => m.to === square && m.shot))
           cell.classList.add('enigma-risk');
+        if (tower && Object.values((game.state.position || game.state).towerCaptures || {})
+          .some(lock => lock.squares.some(key => cellOf(key) === square))) {
+          cell.classList.add('tower-captive');
+          cell.append(node('span', 'tower-captive-mark', ''));
+        }
         if (tower && inTower(tower, square, game.state.towerRadius)) {
           if (showTowerZone) {
             const field = node('span', 'tower-field', '');
@@ -686,6 +691,7 @@
           (locked ? ', под действием Three Freeze' : '') +
           (transparency ? ', прозрачная фигура, ' + transparencyLabel : '') +
           (square === tower ? ', башня Super Fly' : '') +
+          (cell.classList.contains('tower-captive') ? ', удерживается башней' : '') +
           (square === lastInZone ? ', последняя фигура в зоне башни' : '') +
           (abilityTarget ? ', цель стенда' : '');
         cell.setAttribute('aria-label', label);
@@ -1145,7 +1151,7 @@
     let worker = null;
     try {
       if (location.protocol !== 'file:' && typeof Worker !== 'undefined')
-        worker = new Worker('analysis-worker.js?v=5');
+        worker = new Worker('analysis-worker.js?v=6');
       async function analyse(before, after, event) {
         if (worker) {
           try {
@@ -1345,7 +1351,7 @@
     const s = game.state,
       color = game.turn();
     $('stand-cost').textContent = ['w', 'b'].every((c) =>
-      ['house', 'superfly'].includes(s.stands[c]),
+      s.stands[c] === 'house',
     )
       ? 'Пассивные стенды действуют с начала партии'
       : '+10 маны за свой ход';
@@ -1382,7 +1388,16 @@
             : '');
       }
       const meter = $('mana-' + side);
-      const passive = id === 'superfly' || id === 'house';
+      const passive = id === 'house';
+      const towerToggle = $('tower-zone-' + side);
+      towerToggle.hidden = id !== 'superfly';
+      if (id === 'superfly') {
+        towerToggle.textContent = showTowerZone ? 'Скрыть зону' : 'Показать зону';
+        towerToggle.setAttribute('aria-pressed', String(showTowerZone));
+        const lock = (s.position || s).towerCaptures?.[side];
+        if (lock) towerToggle.textContent += ' · ' + lock.left + ' ' + plural(lock.left,'ход','хода','ходов');
+        card.querySelector('.power-name').textContent = lock ? 'Захват · осталось ходов соперника: ' + lock.left : stand.power;
+      }
       const max = stand.cost || MAX_MANA;
       const capacity = stand.manaCap || max;
       const ultimate = id === 'gojo' && s.position.gojo[side] === 2;
@@ -1417,20 +1432,11 @@
       const blocked = game.abilityBlock(side),
         btn = $('power-' + side);
       if (passive) {
-        if (id === 'house') {
-          btn.innerHTML = '<i>' + icon('board') + '</i>Показать комнату';
-          btn.disabled = false;
-          btn.title = 'Призрачные клетки i3–i5';
-          btn.removeAttribute('aria-pressed');
-          btn.setAttribute('aria-label', 'Показать призрачную комнату');
-          continue;
-        }
-        const action = showTowerZone ? 'Скрыть зону' : 'Показать зону';
-        btn.innerHTML = '<i>' + icon('tower') + '</i>' + action;
+        btn.innerHTML = '<i>' + icon('board') + '</i>Показать комнату';
         btn.disabled = false;
-        btn.title = 'Башня ' + s.tower + ' · действует с начала партии';
-        btn.setAttribute('aria-label', 'Super Fly · ' + action);
-        btn.setAttribute('aria-pressed', String(showTowerZone));
+        btn.title = 'Призрачные клетки i3–i5';
+        btn.removeAttribute('aria-pressed');
+        btn.setAttribute('aria-label', 'Показать призрачную комнату');
         continue;
       }
       btn.removeAttribute('aria-pressed');
@@ -2009,6 +2015,14 @@
     );
   }
   for (const color of ['w', 'b']) {
+    const zone = node('button', 'tool-button tower-zone-toggle', 'Скрыть зону');
+    zone.id = 'tower-zone-' + color;
+    zone.hidden = true;
+    $('power-' + color).after(zone);
+    zone.onclick = () => {
+      showTowerZone = !showTowerZone;
+      render();
+    };
     const btn = node('button', 'tool-button', 'Снять наклейку');
     btn.id = 'merge-' + color;
     $('power-' + color).after(btn);
@@ -2029,12 +2043,6 @@
   }
   for (const color of ['w', 'b'])
     $('power-' + color).addEventListener('click', () => {
-      if (game.state.stands[color] === 'superfly') {
-        showTowerZone = !showTowerZone;
-        render();
-        if (showTowerZone) playStand('superfly', game.state.tower);
-        return;
-      }
       if (game.state.stands[color] === 'house') {
         playStand('house', 'i4');
         return;

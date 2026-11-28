@@ -13,6 +13,7 @@ import android.os.Bundle;
 import android.view.View;
 import android.webkit.MimeTypeMap;
 import android.webkit.WebChromeClient;
+import android.webkit.ValueCallback;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -37,6 +38,7 @@ public final class GameActivity extends Activity {
     private static final Pattern ROOM = Pattern.compile("[a-f0-9]{24}");
     private static final Pattern RANGE = Pattern.compile("bytes=(\\d+)-(\\d*)");
     private WebView game;
+    private ValueCallback<Uri[]> imageChoice;
     private Button retry;
     private volatile boolean bundled;
 
@@ -48,6 +50,7 @@ public final class GameActivity extends Activity {
         String duel = uri.getQueryParameter("duel");
         String cup = uri.getQueryParameter("cup");
         if (cup != null && cup.matches("r[1-9]\\d*m[1-9]\\d*-[1-9]\\d*")) return SITE + "?cup=" + cup + "#arena";
+        if ("updates".equals(uri.getFragment())) return SITE + "#updates";
         if ("tournament".equals(uri.getFragment())) return SITE + "#tournament";
         if (duel != null && ROOM.matcher(duel).matches()) return SITE + "?duel=" + duel;
         if (room != null && ROOM.matcher(room).matches()) return SITE + "?room=" + room;
@@ -89,11 +92,22 @@ public final class GameActivity extends Activity {
         settings.setAllowContentAccess(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setUserAgentString(settings.getUserAgentString() + " StandChessAndroid/1.5");
-        game.setWebChromeClient(new WebChromeClient());
+        game.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> result, FileChooserParams params) {
+                if (gameUrl(Uri.parse(view.getUrl())) == null) return false;
+                if (imageChoice != null) imageChoice.onReceiveValue(null);
+                imageChoice = result;
+                Intent choose = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*");
+                try { startActivityForResult(choose, 402); }
+                catch (ActivityNotFoundException e) { imageChoice = null; result.onReceiveValue(null); }
+                return true;
+            }
+        });
         game.setWebViewClient(new GameClient());
         String start = saved == null ? null : saved.getString("url");
         if (start != null) start = gameUrl(Uri.parse(start));
         if (start == null) start = gameUrl(getIntent().getData());
+        if (UpdateJob.WEB_UPDATE.equals(getIntent().getAction())) start = SITE + "#updates";
         game.loadUrl(start == null ? SITE : start);
         UpdateJob.channel(this);
         if (UpdateJob.enabled(this) && !UpdateJob.prefs(this).getBoolean("asked", false)) askForAlerts();
@@ -104,6 +118,13 @@ public final class GameActivity extends Activity {
             UpdateJob.prefs(this).edit().putBoolean("asked", true).apply();
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 401);
         }
+    }
+    @Override protected void onActivityResult(int code, int result, Intent data) {
+        super.onActivityResult(code, result, data);
+        if (code != 402 || imageChoice == null) return;
+        Uri uri = result == RESULT_OK && data != null ? data.getData() : null;
+        imageChoice.onReceiveValue(uri != null && "content".equals(uri.getScheme()) ? new Uri[]{uri} : null);
+        imageChoice = null;
     }
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(code, permissions, results);
@@ -126,7 +147,7 @@ public final class GameActivity extends Activity {
             if (current != null) {
                 bundled = false;
                 retry.setVisibility(View.GONE);
-                game.loadUrl(current);
+                game.evaluateJavascript("if (window.StandProfile?.notifications) StandProfile.notifications(); else location.href='"+SITE+"#updates'", null);
                 return;
             }
         }
@@ -146,6 +167,7 @@ public final class GameActivity extends Activity {
         sendAlertState();
     }
     @Override protected void onDestroy() {
+        if (imageChoice != null) { imageChoice.onReceiveValue(null); imageChoice = null; }
         ((LinearLayout) game.getParent()).removeView(game);
         game.destroy();
         super.onDestroy();

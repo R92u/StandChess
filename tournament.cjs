@@ -80,6 +80,7 @@ function spectatorView(g) {
     turn: game.turn(),
     stands: s.stands,
     locked: s.locked,
+    captives: [...new Set(Object.values((s.position || s).towerCaptures || {}).flatMap(lock => lock.squares.map(key => key.slice(0,2))))],
     mana: Object.fromEntries(
       ['w', 'b']
         .filter((c) => s.stands[c] !== 'dust')

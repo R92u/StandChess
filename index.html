@@ -12,9 +12,9 @@
     <link rel="stylesheet" href="assets/mobile/home.css?v=2" />
     <link rel="stylesheet" href="assets/mobile/tournament.css?v=2" />
     <script defer src="vendor/chess.min.js"></script>
-    <script defer src="variants.js?v=5"></script>
-    <script defer src="engine.js?v=5"></script>
-    <script defer src="analysis.js?v=5"></script>
+    <script defer src="variants.js?v=6"></script>
+    <script defer src="engine.js?v=6"></script>
+    <script defer src="analysis.js?v=6"></script>
     <script defer src="effects.js?v=2"></script>
     <script defer src="piece-effects.js"></script>
     <script defer src="board-fx.js?v=2"></script>
@@ -22,11 +22,14 @@
     <script defer src="vendor/qrcodegen.js"></script>
     <script defer src="board-motion.js?v=2"></script>
     <script defer src="gojo-fx.js?v=4"></script>
-    <script defer src="home.js?v=3"></script>
-    <script defer src="ui.js?v=12"></script>
-    <script defer src="tournament-ui.js?v=2"></script>
+    <link rel="stylesheet" href="assets/mobile/appearance.css" />
+    <script defer src="assets/mobile/appearance.js"></script>
+    <script defer src="home.js?v=4"></script>
+    <script defer src="ui.js?v=13"></script>
+    <script defer src="tournament-ui.js?v=3"></script>
   </head>
   <body>
+    <div class="custom-scenery" aria-hidden="true"></div>
     <main id="home-screen" aria-label="Главная">
       <header class="home-top">
         <div class="home-bar">
@@ -41,7 +44,7 @@
             <button data-social="friends" aria-label="Друзья">
               <i data-icon="players"></i>
             </button>
-            <button data-social="inbox" aria-label="Приглашения">
+            <button data-social="inbox" aria-label="Уведомления">
               <i data-icon="bell"></i>
               <b class="social-count" hidden></b>
             </button>
@@ -157,6 +160,7 @@
           <i data-icon="x"></i>
         </button>
       </header>
+      <section id="patch-notices" aria-label="Обновления игры" hidden></section>
       <div id="social-body"></div>
       <p id="social-feedback" role="status"></p>
     </dialog>
@@ -546,6 +550,28 @@
       <label class="preference-row"
         >Звук игры<input type="checkbox" id="setting-sound"
       /></label>
+      <section class="appearance" aria-labelledby="appearance-heading">
+        <h3 id="appearance-heading">Оформление</h3>
+        <div class="appearance-preview" aria-hidden="true">
+          <div class="preview-board"></div>
+        </div>
+        <div class="appearance-actions">
+          <label class="tool-button photo-picker">Выбрать фон<input type="file" id="theme-file" accept="image/*"></label>
+          <button class="tool-button" id="theme-remove" hidden>Сбросить фон</button>
+        </div>
+        <label class="theme-range">Затемнение <output id="theme-dim-value" for="theme-dim"></output>
+          <input id="theme-dim" type="range" min="0" max="90" value="0">
+        </label>
+        <label class="theme-range">Размытие <output id="theme-blur-value" for="theme-blur"></output>
+          <input id="theme-blur" type="range" min="0" max="24" value="0">
+        </label>
+        <div class="palette-controls">
+          <label>Светлые клетки<input id="theme-light" type="color" value="#afcfdb"></label>
+          <label>Тёмные клетки<input id="theme-dark" type="color" value="#315c80"></label>
+          <button id="theme-board-reset" class="tool-button" hidden>Вернуть ледяные клетки</button>
+        </div>
+        <p role="status" id="theme-status"></p>
+      </section>
       <div id="android-alerts" hidden>
         <label class="preference-row"
           >Уведомления об обновлениях<input

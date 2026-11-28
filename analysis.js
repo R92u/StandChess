@@ -77,6 +77,8 @@
         if (s.locked?.[u.color] === sq) worth -= 0.19 * worth;
         if (u.transparent && p.stickyRules !== 1)
           worth -= worth * 0.1 * u.transparent.turns;
+        const locks = (p || s).towerCaptures;
+        if (locks && Object.values(locks).some(lock => lock.squares.includes(sq))) worth *= 0.85;
         if (trapped.length === 1 && trapped[0][0] === sq) worth -= 0.16 * worth;
         if (x === 8) worth += 0.25;
         if (sq.length > 2) worth += Math.min(0.75, worth * 0.16);

@@ -1,7 +1,7 @@
 // Shared by the server and browser. Every candidate is tested on its resulting position.
 (function (root) {
   'use strict';
-  const factory = ({ Base, other, distance, copy, inTower, STANDS }) => {
+  const factory = ({ Base, other, distance, copy, inTower, towerAllows, markTower, shiftTower, tickTower, STANDS }) => {
     const extra = ['i3', 'i4', 'i5'];
     const files = 'abcdefgh';
     const standard = [...files].flatMap((f) =>
@@ -276,6 +276,7 @@
     function remove(p, sq, expire = false, moving = false) {
       const u = p.units[sq];
       if (!u || (phased(sq) && !expire && !moving)) return;
+      shiftTower(p, sq);
       delete p.units[sq];
       dropRights(p, cellOf(sq));
       if (p.locked[u.color] === sq) p.locked[u.color] = null;
@@ -301,6 +302,7 @@
     }
     function slide(p, from, to, keepRights = false) {
       const u = p.units[from];
+      shiftTower(p, from, to);
       delete p.units[from];
       p.units[to] = u;
       for (const l of p.links) {
@@ -317,6 +319,7 @@
     function finishTurn(p, c, newLink = false, freshZip) {
       p.locked[c] = null;
       p.snared[c] = false;
+      tickTower(p,c);
       for (const l of [...p.links])
         if (l.owner === c && !newLink && --l.left === 0) merge(p, l);
       if (p.stands[c] === 'sticky')
@@ -415,6 +418,7 @@
         const candidates = pseudo(p, sq);
         if (u.type === 'k') candidates.push(...castles(p, sq));
         for (const m of candidates) {
+          if (!towerAllows(p, m.from, m.to) || (m.rook && !towerAllows(p, m.rook, m.rookTo))) continue;
           const n = simulate(p, m);
           if (!validPosition(n, p.side)) continue;
           m.shot =
@@ -550,6 +554,7 @@
             )
               remove(n, sq);
         } else {
+          if (!towerAllows(p,target,dest)) return null;
           const landing = phased(target) ? phaseKey(n, dest) : dest;
           slide(n, target, landing);
           if (u.type === 'p' && dest[1] === (u.color === 'w' ? '8' : '1'))
@@ -627,6 +632,7 @@
         p.tower,
         ...(p.wonder?.w || p.wonder?.b ? [p.wonder] : []),
         ...(p.gojo ? [p.gojo] : []),
+        ...(p.towerCaptures ? [p.towerCaptures] : []),
       ];
     }
     function validChoice(p, c, option, mana) {
@@ -911,7 +917,7 @@
       abilityBlock(c, selecting = true) {
         const s = this.state,
           id = this.p.stands[c];
-        if (['house', 'superfly'].includes(id)) return 'Пассивный стенд';
+        if (id === 'house') return 'Пассивный стенд';
         if (this.result()) return 'Партия завершена';
         if (s.freeze) return 'Время остановлено';
         if (s.mana[c] < price(this.p, c))
@@ -966,7 +972,11 @@
           s.lastMove = null;
           s.positions.pop();
         } else if (id === 'world') s.freeze = 2;
-        else if (id === 'wonder') {
+        else if (id === 'superfly') {
+          s.position = branch(p);
+          markTower(s.position,c,this.towerOccupants());
+          event.detail = 'Захват на три хода соперника';
+        } else if (id === 'wonder') {
           s.position = branch(p);
           s.position.wonder[c] = 3;
           event.detail = 'Защита на три хода соперника';

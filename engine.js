@@ -108,10 +108,11 @@
       user: 'Тоёхиро',
       art: 'superfly',
       power: 'Ловушка башни',
-      action: 'Показать зону',
+      cost: 150,
+      action: 'Замкнуть башню',
       icon: 'tower',
       description:
-        'В зоне башни должна остаться хотя бы одна фигура любого цвета. На клетку башни можно встать и через неё можно ходить.',
+        'В зоне башни всегда остаётся хотя бы одна фигура. За 150 маны башня удерживает всех, кто сейчас в зоне, на три хода соперника. Внутри зоны они могут ходить. Активация сохраняет ваш ход.',
     },
     crimson: {
       name: 'King Crimson',
@@ -165,6 +166,31 @@
   const copy = (value) => JSON.parse(JSON.stringify(value));
   const inTower = (tower, sq, radius = 1) =>
     Boolean(tower && distance(tower, sq) <= radius);
+  function towerAllows(p, from, to) {
+    return !p.towerCaptures || inTower(p.tower, to, p.towerRadius) ||
+      !Object.values(p.towerCaptures).some(lock => lock.squares.includes(from));
+  }
+  function markTower(p, owner, squares) {
+    p.towerCaptures = { ...p.towerCaptures, [owner]: { left: 3, squares: [...squares].sort() } };
+  }
+  function shiftTower(p, from, to) {
+    if (!p.towerCaptures) return;
+    for (const [owner, lock] of Object.entries(p.towerCaptures)) {
+      if (!lock.squares.includes(from)) continue;
+      const squares = lock.squares.filter(sq => sq !== from);
+      if (to) squares.push(to);
+      p.towerCaptures = { ...p.towerCaptures, [owner]: { ...lock, squares: squares.sort() } };
+    }
+  }
+  function tickTower(p, actor) {
+    const owner = other(actor), lock = p.towerCaptures?.[owner];
+    if (!lock) return;
+    p.towerCaptures = { ...p.towerCaptures };
+    if (lock.left > 1) p.towerCaptures[owner] = { ...lock, left: lock.left - 1 };
+    else delete p.towerCaptures[owner];
+    if (!Object.keys(p.towerCaptures).length) p.towerCaptures = null;
+  }
+  const manaCap = (s, color) => STANDS[s.stands[color]].manaCap || STANDS[s.stands[color]].cost || MAX_MANA;
   function chooseTower(board, radius) {
     const occupied = squares.filter((sq) => board.get(sq));
     const candidates = squares.filter(
@@ -222,7 +248,7 @@
         locked: { w: null, b: null },
         homes: {},
         fallen: [],
-        mana: { w: initialMana, b: initialMana },
+        mana: Object.fromEntries(['w','b'].map(side => [side, Math.min(initialMana, manaCap({stands:selected},side))])),
         freeze: 0,
         lastMove: null,
         events: [],
@@ -264,7 +290,7 @@
       if (
         !['w', 'b'].every((side) => {
           const value = game.state.mana?.[side];
-          return Number.isInteger(value) && value >= 0 && value <= MAX_MANA;
+          return Number.isInteger(value) && value >= 0 && value <= manaCap(game.state, side);
         })
       )
         throw new Error('Некорректная запись маны');
@@ -324,6 +350,10 @@
         );
       const tower = this.state.tower;
       if (tower) {
+        if (this.state.towerCaptures) moves = moves.filter(m =>
+          towerAllows(this.state, m.from, m.to) &&
+          (!m.flags.includes('k') || towerAllows(this.state, 'h'+m.from[1], 'f'+m.from[1])) &&
+          (!m.flags.includes('q') || towerAllows(this.state, 'a'+m.from[1], 'd'+m.from[1])));
         const count = this.towerOccupants(board).length;
         if (count <= 2)
           moves = moves.filter((m) =>
@@ -352,9 +382,9 @@
     #variantBefore() {
       const { locked, homes, fallen, stands } = this.state;
       return Object.values(stands).some(
-        (id) => id === 'echoes' || id === 'diamond',
+        (id) => id === 'echoes' || id === 'diamond' || id === 'superfly',
       )
-        ? copy({ locked, homes, fallen })
+        ? copy({ locked, homes, fallen, towerCaptures: this.state.towerCaptures || null })
         : null;
     }
     record() {
@@ -388,6 +418,7 @@
             fallen.map((f) => [f.color, f.home, f.type]).sort(),
           ]);
       }
+      if (this.state.towerCaptures) key += '|capture=' + JSON.stringify(this.state.towerCaptures);
       this.state.positions.push(key);
     }
     repeated() {
@@ -415,7 +446,7 @@
     result() {
       const side = this.turn();
       const noMoves =
-        this.state.locked[side] ||
+        this.state.locked[side] || this.state.towerCaptures ||
         (this.state.tower && this.towerOccupants().length <= 2)
           ? !this.moves().length
           : this.chess.in_checkmate() || this.chess.in_stalemate();
@@ -440,11 +471,10 @@
       return '';
     }
     abilityBlock(color) {
-      if (this.state.stands[color] === 'superfly')
-        return 'Башня действует постоянно';
       if (this.result()) return 'Партия завершена';
       if (this.state.freeze) return 'Время остановлено';
-      if (this.state.mana[color] < MAX_MANA) return 'Нужно 100 маны';
+      const cost = STANDS[this.state.stands[color]].cost || MAX_MANA;
+      if (this.state.mana[color] < cost) return 'Нужно ' + cost + ' маны';
       if (this.turn() !== color)
         return color === 'w' ? 'Доступно в ход белых' : 'Доступно в ход чёрных';
       const stand = this.state.stands[color];
@@ -475,7 +505,10 @@
       const stand = s.stands[color],
         foe = other(color);
       s.mana[color] = 0;
-      if (stand === 'crimson') {
+      if (stand === 'superfly') {
+        markTower(s, color, this.towerOccupants());
+        s.events.push({kind:'ability',color,stand,text:STANDS[stand].name,detail:'Захват на три хода соперника'});
+      } else if (stand === 'crimson') {
         const last = s.lastMove;
         this.chess.load(passTurn(last.before, color));
         if (last.variantBefore) Object.assign(s, copy(last.variantBefore));
@@ -525,6 +558,7 @@
         fields[4] = '0';
         if (color === 'b') fields[5] = String(Number(fields[5]) + 1);
         this.chess.load(fields.join(' '));
+        tickTower(s, color);
         s.lastMove = {
           before,
           variantBefore,
@@ -568,6 +602,7 @@
       const foe = other(m.color);
       const death = m.flags.includes('e') ? to[0] + from[1] : to;
       if (m.captured) {
+        shiftTower(s, death);
         const home = s.homes[death];
         if (home && m.captured !== 'q') {
           const king = squares.find((sq) => {
@@ -585,6 +620,7 @@
         delete s.homes[death];
         if (s.locked[foe] === death) s.locked[foe] = null;
       }
+      shiftTower(s, from, to);
       if (s.homes[from]) {
         s.homes[to] = s.homes[from];
         delete s.homes[from];
@@ -592,13 +628,15 @@
       if (m.flags.includes('k') || m.flags.includes('q')) {
         const short = m.flags.includes('k'),
           rook = (short ? 'h' : 'a') + from[1];
+        shiftTower(s, rook, (short ? 'f' : 'd') + from[1]);
         if (s.homes[rook]) {
           s.homes[(short ? 'f' : 'd') + from[1]] = s.homes[rook];
           delete s.homes[rook];
         }
       }
       s.locked[m.color] = null;
-      const manaEarned = Math.min(MOVE_MANA, MAX_MANA - s.mana[m.color]);
+      tickTower(s,m.color);
+      const manaEarned = Math.min(MOVE_MANA, manaCap(s,m.color) - s.mana[m.color]);
       s.mana[m.color] += manaEarned;
       const event = s.events.length;
       s.events.push({
@@ -646,21 +684,21 @@
     }
     canRecharge() {
       const { freeze, mana } = this.state;
-      return !freeze && (mana.w < MAX_MANA || mana.b < MAX_MANA);
+      return !freeze && ['w','b'].some(side => mana[side] < manaCap(this.state,side));
     }
     recharge() {
       if (!this.canRecharge()) return false;
       const s = this.state;
-      if (s.lastMove && s.mana[s.lastMove.color] < MAX_MANA)
+      if (s.lastMove && s.mana[s.lastMove.color] < manaCap(s,s.lastMove.color))
         s.lastMove.manaEarned = 0;
-      s.mana = { w: MAX_MANA, b: MAX_MANA };
+      s.mana = { w: manaCap(s,'w'), b: manaCap(s,'b') };
       s.events.push({ kind: 'debug', text: 'Мана восстановлена' });
       this.record();
       return true;
     }
   }
   const Match = (root.createStandVariant || require('./variants'))({
-    Base: StandGame,
+    Base: StandGame, towerAllows, markTower, shiftTower, tickTower,
     other,
     distance,
     copy,

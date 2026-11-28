@@ -49,7 +49,7 @@
   const titles = {
     profile: 'Профиль',
     friends: 'Друзья',
-    inbox: 'Приглашения',
+    inbox: 'Уведомления',
     send: 'Вызов на дуэль',
     accept: 'Принять вызов',
   };
@@ -224,12 +224,57 @@
     paint();
     panel.close();
   }
+  let patches = [], socialCount = 0, patchRequest, seenPatch = '';
+  try { seenPatch = localStorage.getItem('standchess.patch-seen') || ''; } catch {}
+  function updateBell() {
+    const index = patches.findIndex(p => p.version === seenPatch);
+    const unread = index < 0 ? patches.length : index;
+    const badge = document.querySelector('.social-count');
+    badge.textContent = String(socialCount + unread);
+    badge.hidden = !socialCount && !unread;
+  }
+  function showPatches() {
+    const list = $('patch-notices');
+    list.hidden = page !== 'inbox' || !patches.length;
+    if (!list.hidden && panel.open) {
+      list.replaceChildren();
+      for (const patch of patches) {
+        const entry = element('article',undefined,'patch-entry'), changes = element('ul');
+        entry.append(element('h3','Патч ' + patch.version), changes);
+        for (const line of patch.changes) changes.append(element('li',line));
+        list.append(entry);
+      }
+      seenPatch = patches[0].version;
+      try { localStorage.setItem('standchess.patch-seen',seenPatch); } catch {}
+    }
+    updateBell();
+  }
+  async function refreshPatches() {
+    if (patchRequest) return patchRequest;
+    patchRequest = (async () => {
+      const response = await fetch('assets/patches.json',{cache:'no-cache'});
+      if (!response.ok) return;
+      const data = await response.json();
+      if (!Array.isArray(data)) return;
+      patches = data.filter(p => typeof p.version === 'string' && Array.isArray(p.changes));
+      showPatches();
+    })().catch(() => {}).finally(() => { patchRequest = null; });
+    return patchRequest;
+  }
+  refreshPatches();
+  setInterval(() => { if (!document.hidden) refreshPatches(); },300000);
+  document.addEventListener('visibilitychange',() => { if (!document.hidden) refreshPatches(); });
+  window.addEventListener('storage',e => {
+    if (e.key === 'standchess.patch-seen') { seenPatch = e.newValue || ''; updateBell(); }
+  });
   function change(next, person) {
     page = next;
     selected = person;
     drawn = '';
     say('');
     $('social-title').textContent = titles[next];
+    showPatches();
+    if (next === 'inbox') refreshPatches();
     paint();
   }
   function row(label, ...buttons) {
@@ -316,9 +361,8 @@
       }).length;
     $('home-nickname').textContent =
       s.nick || (s.user ? 'Выберите ник' : 'Гость');
-    const badge = document.querySelector('.social-count');
-    badge.textContent = String(count);
-    badge.hidden = !count;
+    socialCount = count;
+    updateBell();
     const cards = $('home-friends');
     if (friends.length || !cards.querySelector('.friend-empty')) {
       cards.replaceChildren();
@@ -499,7 +543,7 @@
     }
   }
   $('home-profile').onclick = () => open('profile');
-  window.StandProfile={load,open:()=>open('profile')};
+  window.StandProfile={load,open:()=>open('profile'),notifications:()=>open('inbox')};
   document
     .querySelectorAll('[data-social]')
     .forEach((b) => (b.onclick = () => open(b.dataset.social)));
@@ -533,7 +577,7 @@
     }
   });
   try {
-    if (currentDuel()) open('inbox');
+    if (currentDuel() || location.hash === '#updates') open('inbox');
     else if (localStorage.getItem('standchess.profile'))
       load().catch((e) => say(describe(e)));
   } catch {}

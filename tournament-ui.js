@@ -248,6 +248,7 @@
             continue;
           }
           cell.className = (i + rank) % 2 ? 'dark' : 'light';
+          if (board.captives?.includes(square)) cell.append(el('span','','tower-captive-mark'));
           if (board.last.includes(square)) cell.classList.add('last');
           if (Object.values(board.locked || {}).includes(square))
             cell.classList.add('locked');

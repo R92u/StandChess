@@ -18,6 +18,7 @@ import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import org.json.JSONException;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -67,7 +68,7 @@ public final class UpdateJob extends JobService {
         channel(c);
         if (!enabled(c) || !allowed(c)) return;
         if (prefs(c).getBoolean("installedPending", false)) {
-            notify(c, "Приложение обновлено", "Установлена версия " + installed(c).versionName, null);
+            notify(c, "Приложение обновлено", installedNotes(c), null);
             prefs(c).edit().remove("installedPending").putInt("installedSeen", installed(c).versionCode).apply();
         }
         ComponentName service = new ComponentName(c, UpdateJob.class);
@@ -91,7 +92,32 @@ public final class UpdateJob extends JobService {
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         c.getSystemService(NotificationManager.class).notify(NOTICE,
             new Notification.Builder(c, CHANNEL).setSmallIcon(R.drawable.update_notice).setContentTitle(title)
-                .setContentText(message).setContentIntent(tap).setAutoCancel(true).build());
+                .setContentText(message).setStyle(new Notification.BigTextStyle().bigText(message)).setContentIntent(tap).setAutoCancel(true).build());
+    }
+    private static String patchNotes(JSONArray patches, String version, String fallback) {
+        if (patches != null) for (int i = 0; i < patches.length(); i++) {
+            JSONObject entry = patches.optJSONObject(i);
+            if (entry == null || !version.equals(entry.optString("version"))) continue;
+            JSONArray changes = entry.optJSONArray("changes");
+            if (changes == null || changes.length() == 0) continue;
+            StringBuilder text = new StringBuilder();
+            for (int j = 0; j < changes.length(); j++) {
+                if (j > 0) text.append('\n');
+                text.append("• ").append(changes.optString(j));
+            }
+            return text.toString();
+        }
+        return fallback;
+    }
+    private static String installedNotes(Context c) {
+        String version = installed(c).versionName;
+        String fallback = "Установлена версия " + version;
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(c.getAssets().open("assets/patches.json"), StandardCharsets.UTF_8))) {
+            StringBuilder json = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) json.append(line);
+            return patchNotes(new JSONArray(json.toString()), version, fallback);
+        } catch (IOException | JSONException e) { return fallback; }
     }
     private static JSONObject fetch() throws IOException, JSONException {
         HttpsURLConnection con = (HttpsURLConnection)new URL("https://r92u.github.io/StandChess/updates.json").openConnection();
@@ -105,7 +131,7 @@ public final class UpdateJob extends JobService {
                 char[] chunk = new char[512];
                 int length;
                 while ((length = reader.read(chunk)) != -1) {
-                    if (json.length() + length > 4096) throw new IOException("Invalid feed length");
+                    if (json.length() + length > 65536) throw new IOException("Invalid feed length");
                     json.append(chunk, 0, length);
                 }
                 return new JSONObject(json.toString());
@@ -124,11 +150,11 @@ public final class UpdateJob extends JobService {
         SharedPreferences.Editor next = p.edit().putString("revision",revision).putLong("published",published)
             .putLong("checkedAt",System.currentTimeMillis());
         if (code > installed(this).versionCode && code > p.getInt("apkNotified",0)) {
-            notify(this,"Доступен StandChess " + version,"Нажмите, чтобы открыть выпуск Android.",
+            notify(this,"Доступен StandChess " + version,patchNotes(data.optJSONArray("patches"), version, "Нажмите, чтобы открыть выпуск Android."),
                 Uri.parse("https://github.com/R92u/StandChess/releases/tag/android-v" + version));
             next.putInt("apkNotified",code);
         } else if (!previous.isEmpty() && !revision.equals(previous)) {
-            notify(this,"Игра обновлена","Новая веб-версия StandChess доступна в приложении.", null);
+            notify(this,"Игра обновлена",patchNotes(data.optJSONArray("patches"), version, "Новая веб-версия StandChess доступна в приложении."), null);
         }
         next.apply();
     }
