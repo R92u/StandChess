@@ -134,9 +134,11 @@
       }),
     );
   }
-  if ('requestIdleCallback' in window)
-    window.requestIdleCallback(primeOptics, { timeout: 900 });
-  else setTimeout(primeOptics, 0);
+  if (!matchMedia('(pointer: coarse)').matches) {
+    if ('requestIdleCallback' in window)
+      window.requestIdleCallback(primeOptics, { timeout: 900 });
+    else setTimeout(primeOptics, 0);
+  }
 
   // Radius samples from the two filmed fronts. Units are fractions of frame
   // width, and timestamps are relative to the linked 00:09.000 frame.
@@ -308,6 +310,11 @@
     const media = films[color],
       token = generation;
     current = media;
+    if (media === films.b && !mapReady && !reduced.matches) {
+      if ('requestIdleCallback' in window)
+        window.requestIdleCallback(prepareMap, { timeout: 450 });
+      else setTimeout(prepareMap, 0);
+    }
     media.muted = !sound;
     media.volume = 0.62;
     document.body.dataset.standVisual =

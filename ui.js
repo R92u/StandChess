@@ -81,7 +81,7 @@
   ])
     clip[id] = new Audio('assets/audio/' + id + '.mp3');
   for (const audio of Object.values(clip)) {
-    audio.preload = 'auto';
+    audio.preload = 'none';
     audio.volume = 0.62;
   }
   const storage = {
@@ -122,6 +122,7 @@
     suppressDragClick = false;
   let showTowerZone = true;
   const boardElement = $('board');
+  const motion = window.BoardMotion;
   function pieceImage(color, type) {
     return 'assets/mobile/' + color + type.toLowerCase() + '.png';
   }
@@ -169,13 +170,21 @@
   const visibleEvents = (g) =>
     g.state.events.filter((e) => e.kind !== 'ability' || e.stand !== 'dust');
   let seekVersion = 0;
+  let checkpointOwner;
+  const checkpoints = new Map();
   async function seek(index) {
     const version = ++seekVersion;
     const events = game.state.events;
+    const visible = visibleEvents(game);
+    const fromIndex = visibleEvents(displayed()).length;
+    const step =
+      Math.abs(fromIndex - index) === 1
+        ? visible[Math.max(fromIndex, index) - 1]
+        : null;
     resetSelection();
     stopAudio();
     window.StandEffects.stop();
-    if (index >= visibleEvents(game).length) review = null;
+    if (index >= visible.length) review = null;
     else if (online.id && Object.values(game.state.stands).includes('dust')) {
       const room = online.id;
       try {
@@ -194,14 +203,23 @@
         return;
       }
     } else {
-      const replay =
-        review && visibleEvents(review).length <= index
-          ? review
-          : replayStart();
-      let remaining = index - visibleEvents(replay).length;
+      if (checkpointOwner !== game) {
+        checkpoints.clear();
+        checkpointOwner = game;
+      }
+      let replay = review && fromIndex <= index ? review : null;
+      let nearest = replay ? fromIndex : -1;
+      for (const at of checkpoints.keys())
+        if (at <= index && at > nearest) nearest = at;
+      if (nearest >= 0 && (!replay || nearest !== fromIndex))
+        replay = StandGame.restore(checkpoints.get(nearest));
+      replay ||= replayStart();
+      let at = visibleEvents(replay).length;
+      let remaining = index - at;
       for (const e of events.slice(replay.state.events.length)) {
         if (!remaining) break;
-        if (e.kind !== 'ability' || e.stand !== 'dust') remaining--;
+        const isVisible = e.kind !== 'ability' || e.stand !== 'dust';
+        if (isVisible) remaining--;
         // Old games can have recorded moves or captures of transparent pieces.
         if (
           replay.state.position?.stickyRules === 1 &&
@@ -219,62 +237,110 @@
           replay.state.events.at(-1).calamity = e.calamity.map((hit) => ({
             ...hit,
           }));
+        if (isVisible && ++at % 16 === 0 && !checkpoints.has(at)) {
+          if (checkpoints.size >= 12)
+            checkpoints.delete(checkpoints.keys().next().value);
+          checkpoints.set(at, replay.snapshot());
+        }
       }
       review = replay;
     }
     render();
+    motion.play(step, index < fromIndex);
   }
   $('replay-first').onclick = () => seek(0);
   $('replay-prev').onclick = () =>
     seek(Math.max(0, visibleEvents(displayed()).length - 1));
   $('replay-next').onclick = () => seek(visibleEvents(displayed()).length + 1);
   $('replay-last').onclick = () => seek(visibleEvents(game).length);
+  for (const arrow of [$('replay-prev'), $('replay-next')]) {
+    arrow.addEventListener('click', () => {
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches)
+        arrow.animate(
+          [
+            { backgroundColor: '#bcd7ef35' },
+            { backgroundColor: 'transparent' },
+          ],
+          { duration: 210, easing: 'ease-out' },
+        );
+    });
+  }
+  const strip = $('phone-moves');
+  const track = document.createElement('div');
+  track.className = 'move-track';
+  strip.append(track);
+  const beginning = node('span', 'strip-start', 'Начало партии');
+  track.append(beginning);
+  let stripOwner,
+    stripNumber,
+    stripCount = 0,
+    activeToken;
+  function centerToken(animate) {
+    if (!activeToken) return;
+    track.classList.toggle('scroll-moves', animate);
+    track.style.transform =
+      'translate3d(' +
+      -(activeToken.offsetLeft + activeToken.offsetWidth / 2) +
+      'px,0,0)';
+  }
+  new ResizeObserver(() => centerToken(false)).observe(strip);
   function renderReplay() {
-    const end = visibleEvents(game).length,
-      index = visibleEvents(displayed()).length;
+    const events = visibleEvents(game);
+    const index = review ? visibleEvents(review).length : events.length;
     $('replay-first').disabled = $('replay-prev').disabled = index === 0;
     $('replay-last').disabled = $('replay-next').disabled = !review;
     $('replay-status').textContent = review
-      ? 'Просмотр · ' + index + ' / ' + end
+      ? 'Просмотр · ' + index + ' / ' + events.length
       : 'Текущая позиция';
-    const strip = $('phone-moves'),
-      events = visibleEvents(game);
-    strip.replaceChildren();
-    if (!index) strip.textContent = 'Начало партии';
-    else {
-      const first =
-        index > 1 &&
-        events[index - 1].color === 'b' &&
-        events[index - 2].color === 'w'
-          ? index - 2
-          : index - 1;
-      const current = displayed(),
-        fen = current.state.fen.split(' ');
-      const number = Math.max(
-        1,
-        Number(fen[5]) -
-          (events[index - 1].color === 'b' && current.turn() === 'w' ? 1 : 0),
-      );
-      strip.append(
-        node(
-          'span',
-          'strip-number',
-          number + (events[first].color === 'b' ? '…' : '.'),
-        ),
-      );
-      for (let i = first; i < index; i++) {
-        const e = events[i],
-          b = node(
-            'button',
-            i === index - 1 ? 'strip-active' : '',
-            e.san || e.text || 'Стенд',
-          );
-        b.type = 'button';
-        b.onclick = () => seek(i + 1);
-        strip.append(b);
-      }
+    const owner = online.id || game;
+    const reset = owner !== stripOwner || events.length < stripCount;
+    if (reset) {
+      track.replaceChildren(beginning);
+      stripOwner = owner;
+      stripCount = 0;
+      stripNumber = Number(game.state.startFen?.split(' ')[5]) || 1;
+      activeToken = null;
     }
+    const oldCount = stripCount;
+    for (; stripCount < events.length; stripCount++) {
+      const e = events[stripCount];
+      const prev = events[stripCount - 1];
+      if (!prev || prev.color === 'b' || prev.color === e.color) {
+        track.append(
+          node(
+            'span',
+            'strip-number',
+            stripNumber + (e.color === 'b' ? '…' : '.'),
+          ),
+        );
+      }
+      const token = node('button', '', e.san || e.text || 'Стенд');
+      token.type = 'button';
+      token.dataset.ply = stripCount + 1;
+      track.append(token);
+      if (
+        e.color === 'b' &&
+        (e.kind === 'move' ||
+          ['sticky', 'diamond', 'gold', 'kiss', 'heaven'].includes(e.stand))
+      )
+        stripNumber++;
+    }
+    if (activeToken?.dataset.ply === String(index) && oldCount === stripCount)
+      return;
+    activeToken?.classList.remove('strip-active');
+    activeToken?.removeAttribute('aria-current');
+    beginning.hidden = index !== 0;
+    activeToken = index
+      ? track.querySelector('[data-ply="' + index + '"]')
+      : beginning;
+    activeToken.classList.add('strip-active');
+    activeToken.setAttribute('aria-current', 'step');
+    centerToken(!reset && index !== 0 && oldCount !== 0);
   }
+  track.addEventListener('click', (e) => {
+    const token = e.target.closest('[data-ply]');
+    if (token) seek(Number(token.dataset.ply));
+  });
   const mayPlay = () =>
     !review &&
     (!online.id ||
@@ -331,11 +397,12 @@
     candidates = [];
     promote = null;
   }
-  function changed() {
+  function changed(move, pose) {
     review = null;
     resetSelection();
-    if (!online.id) storage.write('match', JSON.stringify(game.snapshot()));
+    if (!online.id) storage.write('match', JSON.stringify(game.state));
     render();
+    motion.play(move, false, pose);
   }
   function selectablePiece(game, square, piece) {
     return (
@@ -397,17 +464,21 @@
         );
     }
   }
-  function renderBoard(game = displayed()) {
+  let boardLayout = '';
+  function renderBoard(
+    game = displayed(),
+    verdict = game.result(),
+    inCheck = game.chess.in_check(),
+  ) {
     const hasRoom = Object.values(game.state.stands).includes('house');
     const files = [...(hasRoom ? 'abcdefghi' : 'abcdefgh')];
     if (flipped) files.reverse();
     const ranks = Array.from(flipped ? '12345678' : '87654321');
     const board = $('board'),
       fragment = document.createDocumentFragment(),
-      inCheck = game.chess.in_check(),
-      verdict = game.result(),
       playing = !verdict && mayPlay();
     board.classList.toggle('house-board', hasRoom);
+    board.classList.toggle('flipped', flipped);
     const abilityTargets = targeting
       ? targetOrigin
         ? game
@@ -435,28 +506,63 @@
             ' ' +
             plural(count, 'фигура', 'фигуры', 'фигур'));
     }
+    const layout = files.join('');
+    const rebuild = boardLayout !== layout;
+    boardLayout = layout;
+    const hadFocus = board.contains(document.activeElement);
+    const plain =
+      !tower &&
+      !targeting &&
+      !inCheck &&
+      !verdict.startsWith('Мат') &&
+      !game.state.position?.links.length;
+    let index = 0;
     for (const rank of ranks)
       for (const file of files) {
         const square = file + rank,
-          piece = game.chess.get(square),
-          cell = document.createElement('button');
+          piece = game.chess.get(square);
+        const existing = rebuild ? null : board.children[index];
+        index++;
+
         if (file === 'i' && !'345'.includes(rank)) {
-          fragment.append(node('span', 'room-void', ''));
+          if (rebuild) fragment.append(node('span', 'room-void', ''));
           continue;
         }
-        const target = candidates.some((m) => m.to === square);
+        const target = candidates.find((m) => m.to === square);
+        const key =
+          plain &&
+          !piece?.transparent &&
+          !piece?.walk &&
+          !(piece && game.state.locked[piece.color] === square)
+            ? piece
+              ? piece.color + piece.type
+              : '-'
+            : null;
+        if (key && existing?.pieceKey === key) {
+          existing.classList.toggle(
+            'last',
+            game.state.lastMove?.from === square ||
+              game.state.lastMove?.to === square,
+          );
+          existing.classList.toggle(
+            'movable',
+            Boolean(playing && piece?.color === game.turn()),
+          );
+          existing.classList.toggle('selected', square === selected);
+          existing.classList.toggle('legal', Boolean(target && !piece));
+          existing.classList.toggle('capture', Boolean(target && piece));
+          existing.classList.toggle('enigma-risk', Boolean(target?.shot));
+          if (existing.tabIndex !== (square === focusSquare ? 0 : -1))
+            existing.tabIndex = square === focusSquare ? 0 : -1;
+          const pressed = String(square === selected);
+          if (existing.getAttribute('aria-pressed') !== pressed)
+            existing.setAttribute('aria-pressed', pressed);
+          continue;
+        }
+        const cell = document.createElement('button');
+        cell.pieceKey = key;
         cell.type = 'button';
         cell.dataset.square = square;
-        if (file !== 'i') {
-          cell.style.setProperty(
-            '--ice-x',
-            ((file.charCodeAt(0) - 97) * 100) / 7 + '%',
-          );
-          cell.style.setProperty(
-            '--ice-y',
-            ((8 - Number(rank)) * 100) / 7 + '%',
-          );
-        }
         cell.className = 'sq';
         if (file === 'i') cell.classList.add('room-square');
         if (square === targetOrigin) cell.classList.add('selected');
@@ -609,15 +715,19 @@
             square + ', восстановить: ' + pieces[f.type],
           );
         }
-        fragment.append(cell);
+        if (existing) existing.replaceWith(cell);
+        else fragment.append(cell);
       }
-    const hadFocus = board.contains(document.activeElement);
-    board.replaceChildren(fragment);
+    if (rebuild) board.replaceChildren(fragment);
+    motion.sync();
     finishMarks(game, files, ranks, verdict);
     window.PieceEffects.sync();
     window.BoardStandFX.sync();
-    if (hadFocus)
-      board.querySelector('[tabindex="0"]')?.focus({ preventScroll: true });
+    if (hadFocus) {
+      const focus = board.querySelector('[tabindex="0"]');
+      if (focus !== document.activeElement)
+        focus?.focus({ preventScroll: true });
+    }
   }
   function node(tag, cls, value) {
     const el = document.createElement(tag);
@@ -729,35 +839,6 @@
     btn.setAttribute('aria-label', sound ? 'Выключить звук' : 'Включить звук');
     btn.title = btn.getAttribute('aria-label');
   }
-  function renderPlayers(game = displayed()) {
-    const ended = Boolean(game.result());
-    const colors = flipped ? ['w', 'b'] : ['b', 'w'];
-    for (const [index, side] of colors.entries()) {
-      const row = $(index === 0 ? 'player-top' : 'player-bottom');
-      const id = game.state.stands[side],
-        stand = STANDS[id];
-      const active = !ended && side === game.turn();
-      row.classList.toggle('active', active);
-      row.dataset.color = side;
-      const avatar = node('div', 'avatar ' + id, '');
-      const image = document.createElement('img');
-      image.src = 'assets/art/' + stand.art + '-avatar.webp';
-      image.alt = '';
-      avatar.append(image);
-      const info = node('div', 'player-text', ''),
-        label = node('span', 'player-side', '');
-      label.innerHTML = stone(side);
-      label.append(document.createTextNode(sides[side] + ' · ' + stand.name));
-      info.append(node('span', 'player-name', stand.user), label);
-      row.replaceChildren(avatar, info);
-      if (active) {
-        const led = node('span', 'player-led', '');
-        led.setAttribute('aria-label', 'Сейчас ходит');
-        led.title = 'Сейчас ходит';
-        row.append(led);
-      }
-    }
-  }
   const grades = {
     Бриллиантовый: ['!!', 'brilliant'],
     Сильный: ['!', 'great'],
@@ -799,8 +880,7 @@
     if (first) showReportMove(Number(first.dataset.index));
     else $('review-dialog').close();
   };
-  function renderAssessment(g) {
-    const finished = game.result();
+  function renderAssessment(g, finished = game.result()) {
     const key = finished ? game.state.events.length + '|' + game.state.fen : '';
     $('match-review').hidden = !finished;
     if (reportOwner !== game || reportKey !== key) {
@@ -1051,15 +1131,14 @@
   }
   function render(game = displayed()) {
     renderReplay();
-    renderBoard();
-    renderPlayers();
-    renderLog();
-    renderSound();
     const s = game.state,
       result = game.result(),
       color = game.turn(),
       check = game.chess.in_check();
-    renderAssessment(game);
+    renderBoard(game, result, check);
+    if ($('phone-history').open) renderLog();
+    renderSound();
+    renderAssessment(game, review ? undefined : result);
     let turnLabel =
       result ||
       (s.freeze
@@ -1082,6 +1161,42 @@
     $('turn').classList.toggle('finished', Boolean(result));
     document.body.dataset.timeStopped = String(Boolean(s.freeze) && !result);
     $('move-number').textContent = 'Ход ' + s.fen.split(' ')[5];
+    if ($('phone-powers').open) renderPowers(game, result);
+    $('leave-match').hidden = !online.id;
+    document.querySelector('[data-command="leave-match"]').hidden = !online.id;
+    document.querySelector('[data-command="open-report"]').hidden =
+      $('match-review').hidden;
+    $('setting-sound').checked = sound;
+    $('match-type').textContent = online.id
+      ? 'Онлайн · вы играете за ' + (online.side === 'w' ? 'белых' : 'чёрных')
+      : 'Локальная партия';
+    $('new-game').disabled = Boolean(online.id);
+    $('choose-stands').hidden = Boolean(online.id || game.state.events.length);
+    $('online-open').classList.toggle('active', Boolean(online.id));
+    $('online-open').setAttribute('aria-pressed', String(Boolean(online.id)));
+    if ($('online').open) renderRoomDialog();
+    const trapped = s.position?.snared[color];
+    $('target-hint').hidden = !targeting && !trapped;
+    if (trapped)
+      $('target-hint').textContent =
+        'Enigma · отступление уничтожит фигуру. Опасные ходы отмечены красным.';
+    if (targeting)
+      $('target-hint').textContent = {
+        echoes: 'Выберите фигуру соперника, которую прижмёт Echoes.',
+        diamond: 'Выберите стартовую клетку для восстановления.',
+        gold: 'Выберите свою пешку.',
+        kiss: targetOrigin
+          ? 'Выберите соседнюю клетку для копии.'
+          : 'Выберите свою фигуру для копирования.',
+        heaven: 'Выберите фигуру в радиусе трёх клеток от своего короля.',
+        dust: 'Выберите свою фигуру для тайной метки.',
+        sticky:
+          'Выберите свою или чужую фигуру, кроме короля. Она станет прозрачной и неподвижной. Активация завершит ход.',
+      }[s.stands[targeting]];
+  }
+  function renderPowers(game = displayed(), result = game.result()) {
+    const s = game.state,
+      color = game.turn();
     $('stand-cost').textContent = ['w', 'b'].every((c) =>
       ['house', 'superfly'].includes(s.stands[c]),
     )
@@ -1182,42 +1297,20 @@
       meter.style.setProperty('--mana-fill', value / max);
       meter.querySelector('b').textContent = value + ' / ' + max;
     }
-    $('leave-match').hidden = !online.id;
-    document.querySelector('[data-command="leave-match"]').hidden = !online.id;
-    document.querySelector('[data-command="open-report"]').hidden =
-      $('match-review').hidden;
-    $('setting-sound').checked = sound;
-    $('match-type').textContent = online.id
-      ? 'Онлайн · вы играете за ' + (online.side === 'w' ? 'белых' : 'чёрных')
-      : 'Локальная партия';
-    $('new-game').disabled = Boolean(online.id);
-    $('choose-stands').hidden = Boolean(online.id || game.state.events.length);
-    $('online-open').classList.toggle('active', Boolean(online.id));
-    $('online-open').setAttribute('aria-pressed', String(Boolean(online.id)));
-    if ($('online').open) renderRoomDialog();
-    const trapped = s.position?.snared[color];
-    $('target-hint').hidden = !targeting && !trapped;
-    if (trapped)
-      $('target-hint').textContent =
-        'Enigma · отступление уничтожит фигуру. Опасные ходы отмечены красным.';
-    if (targeting)
-      $('target-hint').textContent = {
-        echoes: 'Выберите фигуру соперника, которую прижмёт Echoes.',
-        diamond: 'Выберите стартовую клетку для восстановления.',
-        gold: 'Выберите свою пешку.',
-        kiss: targetOrigin
-          ? 'Выберите соседнюю клетку для копии.'
-          : 'Выберите свою фигуру для копирования.',
-        heaven: 'Выберите фигуру в радиусе трёх клеток от своего короля.',
-        dust: 'Выберите свою фигуру для тайной метки.',
-        sticky:
-          'Выберите свою или чужую фигуру, кроме короля. Она станет прозрачной и неподвижной. Активация завершит ход.',
-      }[s.stands[targeting]];
   }
-  function makeMove(from, to, promotion) {
+  function makeMove(from, to, promotion, pose) {
     if (!mayPlay()) return;
     if (online.id) {
-      online.act({ type: 'move', from, to, promotion }).catch(roomActionError);
+      if (pose) motion.drop(from, to, pose, true);
+      online
+        .act({ type: 'move', from, to, promotion })
+        .then((ok) => {
+          if (!ok) motion.clear();
+        })
+        .catch((error) => {
+          motion.clear();
+          roomActionError(error);
+        });
       return;
     }
     const wasFrozen = game.state.freeze > 0;
@@ -1226,7 +1319,7 @@
       return;
     }
     moveSound(move.captured);
-    changed();
+    changed(game.state.events.at(-1), pose);
     if (playCalamity(game.state.events.at(-1)?.calamity)) return;
     if (move.detonation) {
       playStand('detonate', move.detonation.square, move.detonation);
@@ -1241,7 +1334,7 @@
     if (wasFrozen && (!game.state.freeze || game.result()))
       window.StandEffects.play('resume', sound);
   }
-  function chooseSquare(square) {
+  function chooseSquare(square, pose) {
     focusSquare = square;
     if (game.result() || !mayPlay()) return;
     if (targeting) {
@@ -1302,7 +1395,7 @@
           opts.append(btn);
         }
         $('promotion').showModal();
-      } else makeMove(selected, square);
+      } else makeMove(selected, square, undefined, pose);
       return;
     }
     if (
@@ -1312,17 +1405,45 @@
       selected = square;
       candidates = game.moves(square);
     } else resetSelection();
-    renderBoard();
+    paintSelection();
+  }
+  function paintSelection() {
+    for (const cell of boardElement.querySelectorAll(
+      '.selected,.legal,.capture,.enigma-risk,[tabindex="0"]',
+    )) {
+      cell.classList.remove('selected', 'legal', 'capture', 'enigma-risk');
+      cell.tabIndex = -1;
+      cell.setAttribute('aria-pressed', 'false');
+    }
+    const current = boardElement.querySelector(
+      '[data-square="' + selected + '"]',
+    );
+    if (current) {
+      current.classList.add('selected');
+      current.setAttribute('aria-pressed', 'true');
+    }
+    const focus = boardElement.querySelector(
+      '[data-square="' + focusSquare + '"]',
+    );
+    if (focus) focus.tabIndex = 0;
+    for (const move of candidates) {
+      const cell = boardElement.querySelector(
+        '[data-square="' + move.to + '"]',
+      );
+      cell?.classList.add(game.chess.get(move.to) ? 'capture' : 'legal');
+      if (move.shot) cell?.classList.add('enigma-risk');
+    }
   }
   function releaseGesture() {
     const g = gesture;
     if (!g) return;
     gesture = null;
+    clearTimeout(g.holdTimer);
     if (g.ghost) {
       suppressDragClick = true;
       g.ghost.remove();
+      g.ring.remove();
       g.origin.classList.remove('lifted');
-      g.target?.classList.remove('drop-target');
       boardElement.classList.remove('dragging');
     }
     if (boardElement.hasPointerCapture(g.id))
@@ -1333,7 +1454,7 @@
     releaseGesture();
     if (dragging) {
       resetSelection();
-      renderBoard();
+      paintSelection();
     }
   }
   function dropSquare(x, y) {
@@ -1375,52 +1496,91 @@
       ghost: null,
       target: null,
     };
+    const g = gesture;
+    if (e.pointerType !== 'mouse')
+      g.holdTimer = setTimeout(() => {
+        if (gesture === g && g.origin.isConnected) lift(g, g.startX, g.startY);
+      }, 125);
   });
+  function positionDrag(g, x, y) {
+    const size = g.rect.width;
+    g.ghost.style.transform =
+      'translate3d(' +
+      (x - size / 2) +
+      'px,' +
+      (y - size * 1.4) +
+      'px,0) scale(2)';
+    const col = Math.floor(((x - g.grid.left) * g.cols) / g.grid.width);
+    const row = Math.floor(((y - g.grid.top) * 8) / g.grid.height);
+    const tile =
+      col >= 0 && col < g.cols && row >= 0 && row < 8
+        ? boardElement.children[row * g.cols + col]
+        : null;
+    const cell = tile?.dataset.square ? tile : null;
+    if (g.target === cell) return;
+    g.target = cell;
+    g.ring.hidden = !cell;
+    if (cell) {
+      g.ring.style.transform =
+        'translate3d(' +
+        (g.grid.left + (col - 0.5) * size) +
+        'px,' +
+        (g.grid.top + (row - 0.5) * size) +
+        'px,0)';
+    }
+  }
+  function lift(g, x, y) {
+    clearTimeout(g.holdTimer);
+    g.grid = boardElement.getBoundingClientRect();
+    g.cols = boardElement.classList.contains('house-board') ? 9 : 8;
+    motion.clear();
+    boardElement.setPointerCapture(g.id);
+    selected = focusSquare = g.from;
+    candidates = game.moves(g.from);
+    paintSelection();
+    g.origin.classList.add('lifted');
+    g.ring = document.createElement('span');
+    g.ring.className = 'drag-ring';
+    g.ring.hidden = true;
+    g.ring.setAttribute('aria-hidden', 'true');
+    g.ring.style.width = g.ring.style.height = 2 * g.rect.width + 'px';
+    g.ghost = g.image.cloneNode(false);
+    g.ghost.classList.remove('piece');
+    g.ghost.classList.add('drag-ghost');
+    g.ghost.setAttribute('aria-hidden', 'true');
+    g.ghost.style.width = g.rect.width + 'px';
+    g.ghost.style.height = g.rect.height + 'px';
+    document.body.append(g.ring, g.ghost);
+    boardElement.classList.add('dragging');
+    positionDrag(g, x, y);
+  }
   window.addEventListener('pointermove', (e) => {
     const g = gesture;
     if (!g || e.pointerId !== g.id) return;
+    if (Math.hypot(e.clientX - g.startX, e.clientY - g.startY) >= 4)
+      g.moved = true;
     if (!g.ghost) {
-      if (Math.hypot(e.clientX - g.startX, e.clientY - g.startY) < 5) return;
+      if (!g.moved) return;
       if (!(e.buttons & 1) || !g.origin.isConnected) {
         cancelGesture();
         return;
       }
-      boardElement.setPointerCapture(g.id);
-      selected = focusSquare = g.from;
-      candidates = game.moves(g.from);
-      renderBoard();
-      g.origin = boardElement.querySelector('[data-square="' + g.from + '"]');
-      g.origin.classList.add('lifted');
-      g.ghost = g.image.cloneNode(false);
-      g.ghost.classList.remove('piece');
-      g.ghost.classList.add('drag-ghost');
-      g.ghost.setAttribute('aria-hidden', 'true');
-      g.ghost.style.width = g.rect.width + 'px';
-      g.ghost.style.height = g.rect.height + 'px';
-      document.body.append(g.ghost);
-      boardElement.classList.add('dragging');
-    }
-    const x = g.rect.left + e.clientX - g.startX,
-      y = g.rect.top + e.clientY - g.startY;
-    g.ghost.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0)';
-    const cell = dropSquare(e.clientX, e.clientY);
-    const target = cell?.matches('.legal,.capture') ? cell : null;
-    if (g.target !== target) {
-      g.target?.classList.remove('drop-target');
-      target?.classList.add('drop-target');
-      g.target = target;
-    }
+      lift(g, e.clientX, e.clientY);
+    } else positionDrag(g, e.clientX, e.clientY);
   });
   window.addEventListener('pointerup', (e) => {
     const g = gesture;
     if (!g || e.pointerId !== g.id) return;
     const target = g.ghost && dropSquare(e.clientX, e.clientY);
+    const pose = g.ghost?.getBoundingClientRect();
     releaseGesture();
-    if (!g.ghost) return;
-    if (target?.matches('.legal,.capture')) chooseSquare(target.dataset.square);
+    if (!pose) return;
+    if (target?.matches('.legal,.capture'))
+      chooseSquare(target.dataset.square, pose);
     else {
-      resetSelection();
-      renderBoard();
+      if (target !== g.origin || g.moved) resetSelection();
+      paintSelection();
+      motion.drop(g.from, g.from, pose, false);
     }
   });
   window.addEventListener('pointercancel', (e) => {
@@ -1431,6 +1591,8 @@
       cancelGesture();
   });
   window.addEventListener('blur', cancelGesture);
+  window.addEventListener('resize', cancelGesture);
+  window.addEventListener('scroll', cancelGesture, { passive: true });
   document.addEventListener(
     'keydown',
     (e) => {
@@ -1617,10 +1779,10 @@
     });
   $('flip').onclick = () => {
     cancelGesture();
+    motion.clear();
     flipped = !flipped;
     if (!online.id) storage.write('flipped', flipped ? 'yes' : 'no');
     renderBoard();
-    renderPlayers();
   };
   $('sound-toggle').onclick = () => {
     sound = !sound;
@@ -1648,6 +1810,8 @@
   for (const button of document.querySelectorAll('[data-panel]'))
     button.onclick = () => {
       button.closest('dialog')?.close();
+      if (button.dataset.panel === 'phone-history') renderLog();
+      if (button.dataset.panel === 'phone-powers') renderPowers();
       $(button.dataset.panel).showModal();
     };
   for (const button of document.querySelectorAll('[data-command]'))
@@ -1770,6 +1934,7 @@
   }
   function restoreLocalRoom() {
     review = null;
+    motion.clear();
     online.reset();
     history.replaceState(null, '', roomURL(null));
     game = mainGame;
@@ -1792,6 +1957,7 @@
     const previous = game.state;
     game = StandGame.restore(data.state);
     if (first) {
+      motion.clear();
       review = null;
       flipped = data.side === 'b';
       showTowerZone = true;
@@ -1801,6 +1967,8 @@
     resetSelection();
     render();
     if (!first && !review) {
+      const updates = data.state.events.slice(previous.events.length);
+      if (updates.length) motion.play(updates.length === 1 ? updates[0] : null);
       const hits = [];
       let explosion;
       let effect = null,

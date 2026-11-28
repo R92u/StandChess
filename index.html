@@ -8,17 +8,18 @@
     <link rel="icon" href="assets/mark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="assets/fonts/fonts.css" />
     <link rel="stylesheet" href="style.css?v=2" />
-    <link rel="stylesheet" href="assets/mobile/layout.css?v=2" />
+    <link rel="stylesheet" href="assets/mobile/layout.css?v=3" />
     <script defer src="vendor/chess.min.js"></script>
     <script defer src="variants.js"></script>
     <script defer src="engine.js?v=2"></script>
     <script defer src="analysis.js?v=2"></script>
-    <script defer src="effects.js"></script>
+    <script defer src="effects.js?v=2"></script>
     <script defer src="piece-effects.js"></script>
     <script defer src="board-fx.js?v=2"></script>
     <script defer src="online.js"></script>
     <script defer src="vendor/qrcodegen.js"></script>
-    <script defer src="ui.js?v=4"></script>
+    <script defer src="board-motion.js"></script>
+    <script defer src="ui.js?v=5"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -54,6 +55,7 @@
               <div class="board-rim">
                 <div class="board-stage">
                   <div id="board" role="group" aria-label="Игровое поле"></div>
+                  <div id="move-layer" aria-hidden="true"></div>
                   <div id="mate-marks" hidden aria-hidden="true">
                     <span class="mate-winner"></span
                     ><span class="mate-loser">#</span>
@@ -175,21 +177,21 @@
         id="skip-film"
         src="assets/effects/time-skip.mp4"
         playsinline
-        preload="auto"
+        preload="metadata"
         disablepictureinpicture
       ></video>
       <video
         id="stop-film"
         src="assets/effects/time-stop.mp4"
         playsinline
-        preload="auto"
+        preload="metadata"
         disablepictureinpicture
       ></video>
       <video
         id="resume-film"
         src="assets/effects/time-resume.mp4"
         playsinline
-        preload="auto"
+        preload="metadata"
         disablepictureinpicture
       ></video>
     </div>

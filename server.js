@@ -208,6 +208,7 @@ const publicFiles = new Set([
   'effects.js',
   'piece-effects.js',
   'board-fx.js',
+  'board-motion.js',
   'CREDITS.txt',
 ]);
 const types = {
