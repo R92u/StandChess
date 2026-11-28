@@ -83,7 +83,7 @@ public final class GameActivity extends Activity {
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " StandChessAndroid/1.2");
+        settings.setUserAgentString(settings.getUserAgentString() + " StandChessAndroid/1.3");
         game.setWebChromeClient(new WebChromeClient());
         game.setWebViewClient(new GameClient());
         String start = saved == null ? null : saved.getString("url");

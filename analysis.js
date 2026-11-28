@@ -79,7 +79,8 @@
           worth -= worth * 0.1 * u.transparent.turns;
         if (trapped.length === 1 && trapped[0][0] === sq) worth -= 0.16 * worth;
         if (x === 8) worth += 0.25;
-        if (!u.transparent || p?.stickyRules === 1) {
+        if (sq.length > 2) worth += Math.min(0.75, worth * 0.16);
+        if (sq.length === 2 && (!u.transparent || p?.stickyRules === 1)) {
           const attackers = units.filter(
             ([from, a]) =>
               a.color !== u.color &&
@@ -126,6 +127,7 @@
           enigma: 0.65,
           echoes: 0.85,
           sticky: 1.1,
+          gojo: p?.gojo?.[c] === 2 ? 2.8 : 1.15,
         }[id] || 0;
       score +=
         sign(c) *
@@ -204,12 +206,26 @@
   function name(a, stands) {
     if (a.kind === 'move')
       return (
-        a.from +
+        a.from.slice(0, 2) +
         '–' +
         a.to +
         (promotion(a) ? '=' + promotion(a).toUpperCase() : '')
       );
     if (a.kind === 'merge') return 'Снять наклейку';
+    if (stands[a.color] === 'gojo') {
+      const [mode, dest] = a.choice.split(':');
+      return (
+        {
+          infinity: 'Бесконечность',
+          blue: 'Синий',
+          red: 'Красный',
+          purple: 'Фиолетовый',
+        }[mode] +
+        ' ' +
+        a.target.slice(0, 2) +
+        (dest ? ' → ' + dest : '')
+      );
+    }
     return (
       STANDS[stands[a.color]].name +
       (a.target ? ' ' + a.target : '') +
@@ -304,7 +320,9 @@
         const offered =
           line.a.kind === 'move' && line.next.chess.get(line.a.to);
         const captured =
-          line.a.kind === 'move' && g.chess.get(line.a.death || line.a.to);
+          line.a.kind === 'move' &&
+          line.a.captured &&
+          g.chess.get(line.a.death || line.a.to);
         if (
           offered?.color === actor &&
           offered.type !== 'k' &&

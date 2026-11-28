@@ -150,6 +150,82 @@ main,
   height: 100%;
   filter: none;
 }
+.gojo-fx {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 8;
+  pointer-events: none;
+}
+.gojo-in-flight {
+  visibility: hidden;
+}
+.sq.infinity-square::before {
+  content: '';
+  position: absolute;
+  inset: 15% 9%;
+  border: 2px solid #c9f9ff;
+  border-radius: 50%;
+  transform: rotate(-27deg);
+  box-shadow:
+    0 0 5px #51aaff,
+    inset 0 0 6px #92dbff;
+  pointer-events: none;
+}
+#board .sq img.infinity-piece {
+  filter: drop-shadow(0 0 2px #a7f1ff);
+}
+#board .sq.shared-square {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#board .sq.shared-square img[data-unit] {
+  position: relative;
+  width: 0;
+  height: 73%;
+  flex: 1 1 0;
+  min-width: 0;
+  object-fit: contain;
+  pointer-events: auto;
+}
+#board .sq.purple-area {
+  background-color: #8d39c7a6;
+  box-shadow: inset 0 0 0 1px #edcaff69;
+}
+.stand-card.gojo {
+  --accent: #af83fb;
+}
+.stand-card.gojo.ultimate-ready .power-button {
+  background: #654297;
+  color: white;
+}
+.gojo-confirm,
+.gojo-cancel {
+  border: 0;
+  color: white;
+  font: inherit;
+  font-weight: 650;
+  padding: 0.48em 0.8em;
+  border-radius: 0.5em;
+  cursor: pointer;
+}
+.gojo-confirm {
+  background: #7547ab;
+}
+.gojo-cancel {
+  background: #34475b;
+}
+#stand-options:has(
+    [data-choice='infinity'],
+    [data-choice='red'],
+    [data-choice='blue']
+  ) {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+}
 .sq .coord {
   font-size: clamp(8px, 2.1vw, 12px);
   opacity: 0.85;

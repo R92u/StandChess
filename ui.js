@@ -3,6 +3,8 @@
   const { StandGame, MAX_MANA, STANDS, inTower } = window.StandChess;
   const $ = (id) => document.getElementById(id);
   const icons = {
+    infinity:
+      '<path d="M12 12C9 7 8 6 6 6c-5 0-5 12 0 12 3 0 5-4 6-6s4-6 7-6c5 0 5 12 0 12-3 0-5-3-7-6Z"/>',
     menu: '<path d="M3 5h18M3 12h18M3 19h18"/>',
     options:
       '<path d="M9 5h12M9 12h12M9 19h12"/><circle cx="3" cy="5" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="19" r="1"/>',
@@ -78,6 +80,10 @@
     'world-call',
     'calamity',
     'dust-trigger',
+    'gojo-infinity',
+    'gojo-blue',
+    'gojo-red',
+    'gojo-purple',
   ])
     clip[id] = new Audio('assets/audio/' + id + '.mp3');
   for (const audio of Object.values(clip)) {
@@ -118,6 +124,15 @@
   let focusSquare = 'e2',
     targeting = null;
   let targetOrigin = null;
+  let gojoMode = null,
+    purpleEnd = null;
+  const cellOf = (key) => key?.slice(0, 2);
+  const techniqueNames = {
+    infinity: 'Бесконечность',
+    blue: 'Синий',
+    red: 'Красный',
+    purple: 'Фиолетовый',
+  };
   let gesture = null,
     suppressDragClick = false;
   let showTowerZone = true;
@@ -173,6 +188,7 @@
   let checkpointOwner;
   const checkpoints = new Map();
   async function seek(index) {
+    window.GojoFX.stop();
     const version = ++seekVersion;
     const events = game.state.events;
     const visible = visibleEvents(game);
@@ -321,7 +337,8 @@
       if (
         e.color === 'b' &&
         (e.kind === 'move' ||
-          ['sticky', 'diamond', 'gold', 'kiss', 'heaven'].includes(e.stand))
+          ['sticky', 'diamond', 'gold', 'kiss', 'heaven'].includes(e.stand) ||
+          (e.stand === 'gojo' && e.choice !== 'infinity'))
       )
         stripNumber++;
     }
@@ -392,12 +409,14 @@
   function resetSelection() {
     targeting = null;
     targetOrigin = null;
+    gojoMode = purpleEnd = null;
     releaseGesture();
     selected = null;
     candidates = [];
     promote = null;
   }
   function changed(move, pose) {
+    window.GojoFX.stop();
     review = null;
     resetSelection();
     if (!online.id) storage.write('match', JSON.stringify(game.state));
@@ -480,12 +499,18 @@
     board.classList.toggle('house-board', hasRoom);
     board.classList.toggle('flipped', flipped);
     const abilityTargets = targeting
-      ? targetOrigin
-        ? game
-            .choices(targeting)
-            .filter((o) => o.target === targetOrigin)
-            .map((o) => o.choice)
-        : game.targets(targeting)
+      ? gojoMode
+        ? gojoOptions()
+            .filter((o) => !targetOrigin || o.target === targetOrigin)
+            .map((o) =>
+              targetOrigin ? o.choice.split(':')[1] : cellOf(o.target),
+            )
+        : targetOrigin
+          ? game
+              .choices(targeting)
+              .filter((o) => o.target === targetOrigin)
+              .map((o) => o.choice)
+          : game.targets(targeting).map(cellOf)
       : [];
     const tower = game.state.tower;
     const occupants = game.towerOccupants();
@@ -515,7 +540,8 @@
       !targeting &&
       !inCheck &&
       !verdict.startsWith('Мат') &&
-      !game.state.position?.links.length;
+      !game.state.position?.links.length &&
+      !game.state.position?.gojo;
     let index = 0;
     for (const rank of ranks)
       for (const file of files) {
@@ -565,7 +591,14 @@
         cell.dataset.square = square;
         cell.className = 'sq';
         if (file === 'i') cell.classList.add('room-square');
-        if (square === targetOrigin) cell.classList.add('selected');
+        if (square === cellOf(targetOrigin)) cell.classList.add('selected');
+        if (
+          purpleEnd &&
+          (targetOrigin[0] === purpleEnd[0]
+            ? Math.abs(file.charCodeAt(0) - targetOrigin.charCodeAt(0))
+            : Math.abs(rank - targetOrigin[1])) <= 2
+        )
+          cell.classList.add('purple-area');
         if (candidates.some((m) => m.to === square && m.shot))
           cell.classList.add('enigma-risk');
         if (tower && inTower(tower, square, game.state.towerRadius)) {
@@ -612,8 +645,8 @@
           [game.state.lastMove?.from, game.state.lastMove?.to].includes(square)
         )
           cell.classList.add('last');
-        if (square === selected) cell.classList.add('selected');
-        if (target) cell.classList.add(piece ? 'capture' : 'legal');
+        if (square === cellOf(selected)) cell.classList.add('selected');
+        if (target) cell.classList.add(target.captured ? 'capture' : 'legal');
         if (inCheck && piece?.type === 'k' && piece.color === game.turn())
           cell.classList.add('check');
         if (
@@ -646,7 +679,7 @@
           (square === lastInZone ? ', последняя фигура в зоне башни' : '') +
           (abilityTarget ? ', цель стенда' : '');
         cell.setAttribute('aria-label', label);
-        cell.setAttribute('aria-pressed', String(square === selected));
+        cell.setAttribute('aria-pressed', String(square === cellOf(selected)));
         if (file === (flipped ? 'h' : 'a'))
           cell.append(node('span', 'coord rank', rank));
         if (file === 'i') cell.append(node('span', 'coord rank', square));
@@ -663,6 +696,43 @@
           img.alt = '';
           img.draggable = false;
           cell.append(img);
+          if (game.state.position?.gojo) {
+            const keys = game.pieceKeys(square);
+            if (keys.some((key) => key.length > 2)) {
+              cell.classList.add('infinity-square');
+              cell.classList.toggle('shared-square', keys.length > 1);
+              const labels = [];
+              for (const [i, key] of keys.entries()) {
+                const unit = game.state.position.units[key];
+                const sprite = i ? document.createElement('img') : img;
+                sprite.src = pieceImage(unit.color, unit.walk || unit.type);
+                sprite.dataset.unit = key;
+                sprite.classList.toggle('infinity-piece', key.length > 2);
+                sprite.draggable = false;
+                sprite.alt = '';
+                if (i) cell.append(sprite);
+                labels.push(
+                  sides[unit.color] +
+                    ' · ' +
+                    pieces[unit.type] +
+                    (key.length > 2 ? ' под Бесконечностью' : ''),
+                );
+              }
+              cell.classList.toggle(
+                'movable',
+                playing &&
+                  !targeting &&
+                  keys.some((key) =>
+                    selectablePiece(game, key, game.p.units[key]),
+                  ),
+              );
+              cell.setAttribute(
+                'aria-label',
+                square + ', ' + labels.join(', '),
+              );
+              cell.title = labels.join(' / ');
+            }
+          }
           const link = game.state.position?.links.find(
             (l) => l.clone === square || l.original === square,
           );
@@ -742,9 +812,10 @@
       (e) =>
         (e.kind === 'move' ||
           (e.kind === 'ability' &&
-            ['diamond', 'gold', 'heaven', 'kiss', 'sticky'].includes(
-              e.stand,
-            ))) &&
+            ((e.stand === 'gojo' && e.choice !== 'infinity') ||
+              ['diamond', 'gold', 'heaven', 'kiss', 'sticky'].includes(
+                e.stand,
+              )))) &&
         !e.erased,
     ).length;
     $('event-count').textContent =
@@ -771,7 +842,7 @@
           node(
             'span',
             'detail',
-            e.from +
+            cellOf(e.from) +
               ' → ' +
               e.to +
               (e.detonation
@@ -1047,7 +1118,7 @@
     let worker = null;
     try {
       if (location.protocol !== 'file:' && typeof Worker !== 'undefined')
-        worker = new Worker('analysis-worker.js?v=2');
+        worker = new Worker('analysis-worker.js?v=3');
       async function analyse(before, after, event) {
         if (worker) {
           try {
@@ -1182,6 +1253,18 @@
         'Enigma · отступление уничтожит фигуру. Опасные ходы отмечены красным.';
     if (targeting)
       $('target-hint').textContent = {
+        gojo:
+          gojoMode === 'purple'
+            ? purpleEnd
+              ? 'Подсвечена полоса поражения.'
+              : targetOrigin
+                ? 'Выберите конец линии на противоположном краю.'
+                : 'Выберите край доски для Фиолетового.'
+            : gojoMode === 'infinity'
+              ? 'Бесконечность · выберите фигуру для защиты.'
+              : targetOrigin
+                ? 'Выберите подсвеченную клетку назначения.'
+                : techniqueNames[gojoMode] + ' · выберите фигуру.',
         echoes: 'Выберите фигуру соперника, которую прижмёт Echoes.',
         diamond: 'Выберите стартовую клетку для восстановления.',
         gold: 'Выберите свою пешку.',
@@ -1193,6 +1276,21 @@
         sticky:
           'Выберите свою или чужую фигуру, кроме короля. Она станет прозрачной и неподвижной. Активация завершит ход.',
       }[s.stands[targeting]];
+    if (gojoMode && targeting) {
+      const hint = $('target-hint');
+      if (purpleEnd) {
+        const fire = node('button', 'gojo-confirm', 'Выпустить Фиолетовый');
+        fire.onclick = () =>
+          useStand(targeting, targetOrigin, 'purple:' + purpleEnd);
+        hint.append(' ', fire);
+      }
+      const cancel = node('button', 'gojo-cancel', 'Отмена');
+      cancel.onclick = () => {
+        resetSelection();
+        render();
+      };
+      hint.append(' ', cancel);
+    }
   }
   function renderPowers(game = displayed(), result = game.result()) {
     const s = game.state,
@@ -1234,6 +1332,14 @@
       const meter = $('mana-' + side);
       const passive = id === 'superfly' || id === 'house';
       const max = stand.cost || MAX_MANA;
+      const capacity = stand.manaCap || max;
+      const ultimate = id === 'gojo' && s.position.gojo[side] === 2;
+      if (id === 'gojo') {
+        card.querySelector('.power-name').textContent = ultimate
+          ? 'Ультимейт готов · Фиолетовый'
+          : 'До ультимейта · ' + s.position.gojo[side] + '/2 техник';
+        card.classList.toggle('ultimate-ready', ultimate);
+      }
       const mergeButton = $('merge-' + side);
       mergeButton.hidden = !s.position?.links.some((l) => l.owner === side);
       mergeButton.disabled =
@@ -1280,6 +1386,7 @@
         Boolean(blocked) || !mayPlay() || (online.id && online.side !== side);
       btn.title = blocked || 'Потратить ' + max + ' маны';
       let action = targeting === side ? 'Отмена выбора' : stand.action;
+      if (ultimate && targeting !== side) action = 'Фиолетовый · 50 маны';
       if (blocked) {
         if (result) action = 'Партия завершена';
         else if (s.freeze) action = 'Время остановлено';
@@ -1293,9 +1400,9 @@
       btn.setAttribute('aria-label', stand.name + ' · ' + (blocked || action));
       const value = s.mana[side];
       meter.setAttribute('aria-valuenow', String(value));
-      meter.setAttribute('aria-valuemax', String(max));
-      meter.style.setProperty('--mana-fill', value / max);
-      meter.querySelector('b').textContent = value + ' / ' + max;
+      meter.setAttribute('aria-valuemax', String(capacity));
+      meter.style.setProperty('--mana-fill', value / capacity);
+      meter.querySelector('b').textContent = value + ' / ' + capacity;
     }
   }
   function makeMove(from, to, promotion, pose) {
@@ -1334,11 +1441,83 @@
     if (wasFrozen && (!game.state.freeze || game.result()))
       window.StandEffects.play('resume', sound);
   }
-  function chooseSquare(square, pose) {
+  function gojoOptions() {
+    return game
+      .choices(targeting)
+      .filter((o) => o.choice.split(':')[0] === gojoMode);
+  }
+  function chooseOption(title, items, onPick) {
+    const dialog = $('stand-choice'),
+      list = $('stand-options');
+    $('stand-choice-title').textContent = title;
+    list.replaceChildren();
+    for (const [key, label] of items) {
+      const btn = node('button', 'tool-button', label);
+      btn.dataset.choice = key;
+      btn.onclick = () => {
+        dialog.close();
+        onPick(key);
+      };
+      list.append(btn);
+    }
+    dialog.showModal();
+  }
+  function chooseUnit(keys, onPick) {
+    if (keys.length === 1) return onPick(keys[0]);
+    if (keys.length)
+      chooseOption(
+        'Выберите фигуру на ' + cellOf(keys[0]),
+        keys.map((key) => {
+          const unit = game.p.units[key];
+          return [
+            key,
+            sides[unit.color] +
+              ' · ' +
+              pieces[unit.walk || unit.type] +
+              (key.length > 2 ? ' · ∞' : ''),
+          ];
+        }),
+        onPick,
+      );
+  }
+  function chooseSquare(square, pose, unitKey) {
     focusSquare = square;
     if (game.result() || !mayPlay()) return;
     if (targeting) {
       const id = game.state.stands[targeting];
+      if (id === 'gojo') {
+        const opts = gojoOptions();
+        if (targetOrigin) {
+          if (
+            !opts.some(
+              (o) =>
+                o.target === targetOrigin &&
+                o.choice === gojoMode + ':' + square,
+            )
+          )
+            return;
+          if (gojoMode === 'purple') {
+            purpleEnd = square;
+            render();
+          } else useStand(targeting, targetOrigin, gojoMode + ':' + square);
+          return;
+        }
+        const keys = [
+          ...new Set(
+            opts
+              .filter((o) => cellOf(o.target) === square)
+              .map((o) => o.target),
+          ),
+        ];
+        chooseUnit(keys, (key) => {
+          if (gojoMode === 'infinity') useStand(targeting, key, 'infinity');
+          else {
+            targetOrigin = key;
+            render();
+          }
+        });
+        return;
+      }
       if (targetOrigin) {
         if (
           game
@@ -1348,6 +1527,14 @@
           useStand(targeting, targetOrigin, square);
         return;
       }
+      if (!unitKey && game.p?.gojo) {
+        const keys = game
+          .targets(targeting)
+          .filter((key) => cellOf(key) === square);
+        chooseUnit(keys, (key) => chooseSquare(square, pose, key));
+        return;
+      }
+      square = unitKey || square;
       if (!game.targets(targeting).includes(square)) return;
       if (id === 'kiss') {
         targetOrigin = square;
@@ -1398,6 +1585,25 @@
       } else makeMove(selected, square, undefined, pose);
       return;
     }
+    if (game.p?.gojo) {
+      const keys = game
+        .pieceKeys(square)
+        .filter((key) => selectablePiece(game, key, game.p.units[key]));
+      if (keys.length) {
+        chooseUnit(keys, (key) => {
+          if (selected === key) resetSelection();
+          else {
+            selected = key;
+            candidates = game.moves(key);
+          }
+          paintSelection();
+        });
+      } else {
+        resetSelection();
+        paintSelection();
+      }
+      return;
+    }
     if (
       selected !== square &&
       selectablePiece(game, square, game.chess.get(square))
@@ -1416,7 +1622,7 @@
       cell.setAttribute('aria-pressed', 'false');
     }
     const current = boardElement.querySelector(
-      '[data-square="' + selected + '"]',
+      '[data-square="' + cellOf(selected) + '"]',
     );
     if (current) {
       current.classList.add('selected');
@@ -1430,7 +1636,7 @@
       const cell = boardElement.querySelector(
         '[data-square="' + move.to + '"]',
       );
-      cell?.classList.add(game.chess.get(move.to) ? 'capture' : 'legal');
+      cell?.classList.add(move.captured ? 'capture' : 'legal');
       if (move.shot) cell?.classList.add('enigma-risk');
     }
   }
@@ -1484,10 +1690,19 @@
     if (!e.isPrimary || e.button !== 0 || gesture) return;
     const origin = e.target.closest('.sq.movable');
     if (!origin) return;
-    const image = origin.querySelector('img');
+    const image =
+      e.target.closest('img[data-unit]') || origin.querySelector('img');
+    if (
+      origin.classList.contains('shared-square') &&
+      !e.target.closest('img[data-unit]')
+    )
+      return;
+    const from = image.dataset.unit || origin.dataset.square;
+    if (game.p?.gojo && !selectablePiece(game, from, game.p.units[from]))
+      return;
     gesture = {
       id: e.pointerId,
-      from: origin.dataset.square,
+      from,
       origin,
       image,
       startX: e.clientX,
@@ -1535,7 +1750,8 @@
     g.cols = boardElement.classList.contains('house-board') ? 9 : 8;
     motion.clear();
     boardElement.setPointerCapture(g.id);
-    selected = focusSquare = g.from;
+    selected = g.from;
+    focusSquare = cellOf(g.from);
     candidates = game.moves(g.from);
     paintSelection();
     g.origin.classList.add('lifted');
@@ -1652,6 +1868,7 @@
     return true;
   }
   function playStand(id, target, expected) {
+    window.GojoFX.stop();
     if (id === 'dust') {
       playClip('dust');
       return;
@@ -1659,6 +1876,11 @@
     window.StandEffects.stop();
     window.BoardStandFX.stop();
     stopAudio();
+    if (id === 'gojo' && expected?.choice) {
+      playClip('gojo-' + expected.choice.split(':')[0]);
+      window.GojoFX.play(expected, clip['gojo-' + expected.choice.split(':')[0]]);
+      return;
+    }
     if (id === 'world' || id === 'crimson' || id === 'resume') {
       window.StandEffects.play(
         id === 'world' ? 'b' : id === 'crimson' ? 'w' : id,
@@ -1720,7 +1942,11 @@
     changed();
     if (playCalamity(game.state.events.at(-1)?.calamity)) return;
     const id = game.state.stands[color];
-    playStand(id, effectSquare(id, color, target, choice));
+    playStand(
+      id,
+      effectSquare(id, color, target, choice),
+      id === 'gojo' ? game.state.events.at(-1) : undefined,
+    );
   }
   for (const color of ['w', 'b']) {
     const btn = node('button', 'tool-button', 'Снять наклейку');
@@ -1754,6 +1980,36 @@
         return;
       }
       if (game.abilityBlock(color) || !mayPlay()) return;
+      if (game.state.stands[color] === 'gojo') {
+        if (targeting === color) {
+          resetSelection();
+          render();
+          return;
+        }
+        const begin = (mode) => {
+          resetSelection();
+          targeting = color;
+          gojoMode = mode;
+          render();
+        };
+        if (game.p.gojo[color] === 2) begin('purple');
+        else {
+          const modes = new Set(
+            game.choices(color).map((o) => o.choice.split(':')[0]),
+          );
+          const labels = {
+            infinity: 'Бесконечность · защита без потери хода',
+            blue: 'Синий · сместить чужую на 1 клетку',
+            red: 'Красный · сместить свою на 2 клетки',
+          };
+          chooseOption(
+            'Техника Годжо · 50 маны',
+            Object.entries(labels).filter(([mode]) => modes.has(mode)),
+            begin,
+          );
+        }
+        return;
+      }
       if (
         [
           'diamond',
@@ -1954,6 +2210,7 @@
     toast(error.message || 'Не удалось передать ход.');
   }
   function applyRoomState(data, first) {
+    window.GojoFX.stop();
     const previous = game.state;
     game = StandGame.restore(data.state);
     if (first) {
@@ -1997,6 +2254,7 @@
                     : event.color,
               }
             : null;
+          if (effect === 'gojo') expected = event;
           frozen = effect === 'world' ? 2 : 0;
         } else if (event.kind === 'merge') {
           effect = 'kiss';

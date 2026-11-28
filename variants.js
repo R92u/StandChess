@@ -43,6 +43,7 @@
           'wonder',
           'dust',
           'sticky',
+          'gojo',
         ].includes(id),
       );
     const royal = (p, c) =>
@@ -54,7 +55,25 @@
       (extra.includes(s) &&
         p.stands[piece.color] === 'house' &&
         piece.type !== 'k');
-    const cap = (p, c) => STANDS[p.stands[c]].cost || 100;
+    const price = (p, c) => STANDS[p.stands[c]].cost || 100;
+    const cap = (p, c) => STANDS[p.stands[c]].manaCap || price(p, c);
+    const cellOf = (key) => key.slice(0, 2);
+    const phased = (key) => key.length > 2;
+    function phaseKey(p, square) {
+      let slot = 1;
+      while (p.units[square + '~' + slot]) slot++;
+      return square + '~' + slot;
+    }
+    function settleInfinity(p) {
+      if (!p.gojo) return;
+      for (const color of ['w', 'b']) {
+        const side = Object.entries(p.units).filter(
+          ([, u]) => u.color === color && u.type !== 'k',
+        );
+        if (side.length === 1 && phased(side[0][0]))
+          remove(p, side[0][0], true);
+      }
+    }
     // Earlier games allowed a transparent piece to move, attack and be taken.
     // Only the historical viewer can request that ruleset.
     const frozenBySticky = (p, piece) =>
@@ -209,14 +228,23 @@
       for (const short of [true, false]) {
         const flag = short ? 'k' : 'q',
           rk = (short ? 'h' : 'a') + r,
-          rook = p.units[rk];
+          rookKey =
+            p.units[rk] || !p.gojo
+              ? rk
+              : Object.keys(p.units).find(
+                  (key) =>
+                    cellOf(key) === rk &&
+                    p.units[key].type === 'r' &&
+                    p.units[key].color === c,
+                ),
+          rook = p.units[rookKey];
         if (
           !p.rights.includes(c === 'w' ? flag.toUpperCase() : flag) ||
           rook?.type !== 'r' ||
           rook.color !== c ||
           rook.walk ||
           frozenBySticky(p, rook) ||
-          p.locked[c] === rk
+          p.locked[c] === rookKey
         )
           continue;
         // King and rook destinations must be vacant. Only b can be crossed
@@ -235,7 +263,7 @@
           to: (short ? 'g' : 'c') + r,
           flags: flag,
           piece: 'k',
-          rook: rk,
+          rook: rookKey,
           rookTo: mid,
         });
       }
@@ -245,19 +273,25 @@
       const right = { a1: 'Q', h1: 'K', a8: 'q', h8: 'k' }[sq];
       if (right) p.rights = p.rights.replace(right, '');
     }
-    function remove(p, sq) {
+    function remove(p, sq, expire = false, moving = false) {
       const u = p.units[sq];
-      if (!u) return;
+      if (!u || (phased(sq) && !expire && !moving)) return;
       delete p.units[sq];
-      dropRights(p, sq);
+      dropRights(p, cellOf(sq));
       if (p.locked[u.color] === sq) p.locked[u.color] = null;
       const king = royal(p, u.color);
-      if (u.home && u.type !== 'q' && king && distance(king, sq) <= 3)
+      if (
+        !expire &&
+        u.home &&
+        u.type !== 'q' &&
+        king &&
+        distance(king, sq) <= 3
+      )
         p.fallen.push({
           color: u.color,
           type: u.type,
           home: u.home,
-          square: sq,
+          square: cellOf(sq),
         });
       const pair = p.links.find((l) => l.original === sq || l.clone === sq);
       if (pair) {
@@ -265,7 +299,7 @@
         remove(p, pair.original === sq ? pair.clone : pair.original);
       }
     }
-    function slide(p, from, to) {
+    function slide(p, from, to, keepRights = false) {
       const u = p.units[from];
       delete p.units[from];
       p.units[to] = u;
@@ -274,7 +308,7 @@
         if (l.clone === from) l.clone = to;
       }
       if (p.locked[u.color] === from) p.locked[u.color] = to;
-      dropRights(p, from);
+      if (!keepRights) dropRights(p, cellOf(from));
     }
     function merge(p, l) {
       p.links = p.links.filter((pair) => pair !== l);
@@ -314,7 +348,10 @@
       if (!king) return;
       const checkers = Object.entries(p.units).filter(
         ([sq, u]) =>
-          u.color === actor && u.type !== 'k' && attacksSquare(p, sq, king),
+          u.color === actor &&
+          u.type !== 'k' &&
+          !phased(sq) &&
+          attacksSquare(p, sq, king),
       );
       if (!checkers.length) return;
       p.wonder[protectedSide] = 0;
@@ -350,7 +387,7 @@
           color: c,
         };
         n.units[m.death] = { ...bait, dust: undefined };
-        remove(n, m.from);
+        remove(n, m.from, false, true);
       } else if (m.death) remove(n, m.death);
       // A capture may destroy the moving piece through a Kiss link.
       if (n.units[m.from]) {
@@ -365,7 +402,9 @@
       n.ep = m.flags === 'b' ? step(m.from, 0, c === 'w' ? 1 : -1) : null;
       n.half = u.type === 'p' || m.death || !n.units[m.to] ? 0 : p.half + 1;
       finishTurn(n, c);
+      settleInfinity(n);
       resolveWonder(n, c, true, victims);
+      settleInfinity(n);
       return n;
     }
     function legal(p, from, first = false) {
@@ -387,9 +426,46 @@
       }
       return found;
     }
+    function gojoOptions(p, c) {
+      const list = [];
+      if (p.gojo[c] === 2) {
+        for (const f of files) {
+          list.push(
+            { target: f + '1', choice: 'purple:' + f + '8' },
+            { target: f + '8', choice: 'purple:' + f + '1' },
+          );
+        }
+        for (const r of '12345678') {
+          list.push(
+            { target: 'a' + r, choice: 'purple:h' + r },
+            { target: 'h' + r, choice: 'purple:a' + r },
+          );
+        }
+        return list;
+      }
+      for (const [key, unit] of Object.entries(p.units)) {
+        if (unit.type === 'k') continue;
+        if (!phased(key)) list.push({ target: key, choice: 'infinity' });
+        if (frozenBySticky(p, unit)) continue;
+        const own = unit.color === c,
+          length = own ? 2 : 1;
+        for (const [dx, dy] of adjacent) {
+          const dest = step(key, dx * length, dy * length);
+          if (within(p, dest, unit) && !p.units[dest])
+            list.push({ target: key, choice: (own ? 'red:' : 'blue:') + dest });
+        }
+      }
+      return list;
+    }
+    function inPurple(sq, start, end) {
+      return start[0] === end[0]
+        ? Math.abs(sq.charCodeAt(0) - start.charCodeAt(0)) <= 2
+        : Math.abs(Number(sq[1]) - Number(start[1])) <= 2;
+    }
     function options(p, c) {
       const id = p.stands[c],
         list = [];
+      if (id === 'gojo') return gojoOptions(p, c);
       if (id === 'diamond')
         return p.fallen
           .filter((f) => f.color === c && !p.units[f.home])
@@ -431,6 +507,33 @@
       const n = branch(p),
         id = p.stands[c],
         u = n.units[target];
+      if (id === 'gojo') {
+        n.gojo = { ...p.gojo, [c]: (p.gojo[c] + 1) % 3 };
+        const [technique, dest] = choice.split(':');
+        if (technique === 'infinity') {
+          slide(n, target, phaseKey(n, target), true);
+          if (
+            p.ep &&
+            p.ep[0] === target[0] &&
+            Math.abs(p.ep[1] - target[1]) === 1 &&
+            u.type === 'p'
+          )
+            n.ep = null;
+          settleInfinity(n);
+          return n;
+        }
+        if (technique === 'purple') {
+          for (const [sq, piece] of Object.entries(n.units))
+            if (piece.type !== 'k' && !phased(sq) && inPurple(sq, target, dest))
+              remove(n, sq);
+        } else {
+          const landing = phased(target) ? phaseKey(n, dest) : dest;
+          slide(n, target, landing);
+          if (u.type === 'p' && dest[1] === (u.color === 'w' ? '8' : '1'))
+            n.units[landing] = { ...u, type: 'q', walk: undefined };
+          if (check(n, other(c))) return null;
+        }
+      }
       if (id === 'dust') {
         for (const [sq, piece] of Object.entries(n.units))
           if (piece.color === c && piece.dust)
@@ -470,7 +573,9 @@
       n.ep = null;
       n.half = 0;
       finishTurn(n, c, id === 'kiss', id === 'sticky' ? target : null);
+      settleInfinity(n);
       resolveWonder(n, c, true, victims);
+      settleInfinity(n);
       return n;
     }
     function signature(p) {
@@ -498,7 +603,24 @@
         p.stands,
         p.tower,
         ...(p.wonder?.w || p.wonder?.b ? [p.wonder] : []),
+        ...(p.gojo ? [p.gojo] : []),
       ];
+    }
+    function validChoice(p, c, option, mana) {
+      const id = p.stands[c];
+      if (id === 'echoes' || id === 'dust') return true;
+      const next = applyChoice(p, c, option);
+      if (!next || !validPosition(next, c)) return false;
+      if (id !== 'gojo') return true;
+      if (option.choice === 'infinity') {
+        if (legal(next, null, true).length) return true;
+        const remaining = mana - price(p, c);
+        return (
+          remaining >= price(p, c) &&
+          gojoOptions(next, c).some((o) => validChoice(next, c, o, remaining))
+        );
+      }
+      return option.choice.startsWith('purple:') || !check(next, other(c));
     }
     function changeSide(p, side) {
       if (p.side === side) return p;
@@ -547,6 +669,7 @@
           p.stickyRules = stickyRules;
           s.stickyRulesFrom = 0;
         }
+        if (Object.values(s.stands).includes('gojo')) p.gojo = { w: 0, b: 0 };
         for (const sq of standard) {
           const u = base.chess.get(sq);
           if (u) p.units[sq] = { ...u, ...(s.homes[sq] ? { home: sq } : {}) };
@@ -561,7 +684,10 @@
       }
       attach() {
         this.chess = {
-          get: (sq) => this.p.units[sq] || null,
+          get: (sq) =>
+            this.p.units[sq] ||
+            (this.p.gojo && this.p.units[this.pieceKeys(sq)[0]]) ||
+            null,
           in_check: () => check(this.p, this.turn()),
           turn: () => this.turn(),
           fen: () => fen(this.p),
@@ -601,8 +727,20 @@
       }
       moves(sq) {
         if (this.state.legalMoves)
-          return this.state.legalMoves.filter((m) => !sq || m.from === sq);
+          return this.state.legalMoves.filter(
+            (m) =>
+              !sq ||
+              m.from === sq ||
+              (this.p.gojo && !this.p.units[sq] && cellOf(m.from) === sq),
+          );
+        if (sq && this.p.gojo && !this.p.units[sq] && sq.length === 2)
+          return this.pieceKeys(sq).flatMap((key) => legal(this.p, key));
         return legal(this.p, sq);
+      }
+      pieceKeys(square) {
+        return Object.keys(this.p.units)
+          .filter((key) => cellOf(key) === square)
+          .sort();
       }
       towerOccupants() {
         return this.p.tower
@@ -615,10 +753,8 @@
         if (!this.cache.has(c))
           this.cache.set(
             c,
-            options(this.p, c).filter(
-              (o) =>
-                ['echoes', 'dust'].includes(this.p.stands[c]) ||
-                validPosition(applyChoice(this.p, c, o), c),
+            options(this.p, c).filter((o) =>
+              validChoice(this.p, c, o, this.state.mana[c]),
             ),
           );
         return this.cache.get(c);
@@ -659,9 +795,11 @@
           l = n.links.find((l) => l.owner === c);
         if (!l) return null;
         merge(n, l);
+        settleInfinity(n);
         // A free merge can reveal a checking line even between turns.
         if (n.wonder[other(c)] && !check(this.p, other(c)))
           resolveWonder(n, c, false, victims);
+        settleInfinity(n);
         return n;
       }
       canMerge(c) {
@@ -710,8 +848,15 @@
             !s.freeze &&
             ((this.canRewind(c) &&
               legal(changeSide(s.lastMove.previous, c), null, true).length) ||
-              (s.mana[c] >= cap(p, c) &&
-                ['gold', 'heaven', 'diamond', 'kiss', 'sticky'].includes(id) &&
+              (s.mana[c] >= price(p, c) &&
+                [
+                  'gold',
+                  'heaven',
+                  'diamond',
+                  'kiss',
+                  'sticky',
+                  'gojo',
+                ].includes(id) &&
                 this.choices(c).length));
           let mergeEscape = false;
           if (this.canMerge(c)) {
@@ -740,14 +885,14 @@
         this.cache.set('result', verdict);
         return verdict;
       }
-      abilityBlock(c) {
+      abilityBlock(c, selecting = true) {
         const s = this.state,
           id = this.p.stands[c];
         if (['house', 'superfly'].includes(id)) return 'Пассивный стенд';
         if (this.result()) return 'Партия завершена';
         if (s.freeze) return 'Время остановлено';
-        if (s.mana[c] < cap(this.p, c))
-          return 'Нужно ' + cap(this.p, c) + ' маны';
+        if (s.mana[c] < price(this.p, c))
+          return 'Нужно ' + price(this.p, c) + ' маны';
         if (this.turn() !== c) return 'В свой ход';
         if (id === 'crimson' && !this.canRewind(c)) return 'Нельзя стереть ход';
         if (
@@ -759,14 +904,16 @@
             'echoes',
             'sticky',
             'dust',
+            'gojo',
           ].includes(id) &&
+          (id !== 'gojo' || selecting) &&
           !this.choices(c).length
         )
           return 'Нет доступной цели';
         return '';
       }
       activate(c, target, choice) {
-        if (this.abilityBlock(c)) return false;
+        if (this.abilityBlock(c, false)) return false;
         const s = this.state,
           p = this.p,
           id = p.stands[c],
@@ -796,10 +943,12 @@
           s.position.snared[other(c)] = true;
           event.detail = 'Ловушка на следующий ход';
         } else {
-          const opt = this.choices(c).find(
+          const direct = id === 'gojo' && !this.cache.has(c);
+          const opt = (direct ? gojoOptions(p, c) : this.choices(c)).find(
             (o) => o.target === target && o.choice === choice,
           );
-          if (!opt) return false;
+          if (!opt || (direct && !validChoice(p, c, opt, s.mana[c])))
+            return false;
           const victims = [];
           s.position = applyChoice(p, c, opt, victims);
           addCalamity(event, victims);
@@ -808,7 +957,34 @@
             id === 'dust'
               ? 'Третья бомба взведена'
               : target + (choice ? ' → ' + choice : '');
-          if (!['echoes', 'dust'].includes(id))
+          if (id === 'gojo') {
+            const [mode, dest] = choice.split(':');
+            const names = {
+              infinity: 'Бесконечность',
+              red: 'Красный',
+              blue: 'Синий',
+              purple: 'Фиолетовый',
+            };
+            event.text = names[mode];
+            event.detail = cellOf(target) + (dest ? ' → ' + dest : '');
+            if (mode === 'purple')
+              event.victims = Object.entries(p.units)
+                .filter(([key]) => !s.position.units[key])
+                .map(([key, u]) => ({
+                  square: cellOf(key),
+                  type: u.walk || u.type,
+                  color: u.color,
+                }));
+            if (mode === 'blue' || mode === 'red')
+              event.displaced = {
+                color: p.units[target].color,
+                type: p.units[target].walk || p.units[target].type,
+              };
+          }
+          if (
+            !['echoes', 'dust'].includes(id) &&
+            !(id === 'gojo' && choice === 'infinity')
+          )
             s.lastMove = {
               previous: p,
               before: fen(p),
@@ -820,7 +996,7 @@
               san: STANDS[id].name,
             };
         }
-        s.mana[c] -= cap(p, c);
+        s.mana[c] -= price(p, c);
         s.events.push(event);
         this.record();
         return true;
@@ -831,6 +1007,7 @@
           (m) => m.to === to && m.promotion === promotion,
         );
         if (!m) return null;
+        from = m.from;
         const p = this.p,
           s = this.state,
           c = p.side,
@@ -857,7 +1034,7 @@
             : m.flags === 'q'
               ? 'O-O-O'
               : (m.piece === 'p' ? '' : m.piece.toUpperCase()) +
-                from +
+                cellOf(from) +
                 (m.captured ? '×' : '–') +
                 to +
                 (promotion ? '=' + promotion.toUpperCase() : '');

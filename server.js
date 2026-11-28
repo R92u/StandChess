@@ -172,7 +172,7 @@ async function roomApi(req, res, url, id, op) {
     if (action.type === 'merge') ok = room.game.merge?.(side);
     if (
       action.type === 'move' &&
-      /^(?:[a-h][1-8]|i[345])$/.test(action.from) &&
+      typeof action.from === 'string' && /^(?:[a-h][1-8]|i[345])(?:~[1-9]\d?)?$/.test(action.from) &&
       /^(?:[a-h][1-8]|i[345])$/.test(action.to) &&
       (action.promotion === undefined ||
         ['q', 'r', 'b', 'n'].includes(action.promotion))
@@ -209,6 +209,7 @@ const publicFiles = new Set([
   'piece-effects.js',
   'board-fx.js',
   'board-motion.js',
+  'gojo-fx.js',
   'CREDITS.txt',
 ]);
 const types = {

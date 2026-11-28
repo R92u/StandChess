@@ -68,6 +68,11 @@ https://github.com/jhlywa/chess.js/tree/v0.10.3
 Оформление мобильной доски
 Icy Sea и Neo — Chess.com. https://images.chesscomfiles.com/chess-themes/
 
+Годжо Сатору
+Jujutsu Kaisen — Гэгэ Акутами, MAPPA и правообладатели аниме.
+Портрет, текстуры энергии и фрагменты звуковой дорожки из сцены Hollow Purple.
+https://youtu.be/U2ja8ZLRwrA?t=36
+
 QR-коды
 Project Nayuki, QR Code generator library (MIT).
 https://www.nayuki.io/page/qr-code-generator-library

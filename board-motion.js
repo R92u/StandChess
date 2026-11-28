@@ -4,7 +4,8 @@
   const layer = document.getElementById('move-layer');
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
   const flights = new Map();
-  const square = (name) => board.querySelector('[data-square="' + name + '"]');
+  const square = (name) =>
+    board.querySelector('[data-square="' + name?.slice(0, 2) + '"]');
 
   function clear() {
     for (const flight of flights.values()) {
@@ -24,9 +25,11 @@
   function slide(from, to, pose, preview = false) {
     const start = square(from);
     const end = square(to);
-    const image = (preview ? start : end)?.querySelector(
-      'img:not(.revive-ghost)',
-    );
+    const key = preview ? from : to;
+    const dest = preview ? start : end;
+    const image =
+      dest?.querySelector('[data-unit="' + key + '"]') ||
+      dest?.querySelector('img:not(.revive-ghost)');
     if (!start || !end || !image || reduced.matches) return;
     const box = end.getBoundingClientRect();
     if (!box.width || !box.height) return;

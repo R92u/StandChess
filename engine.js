@@ -9,6 +9,18 @@
   const MOVE_MANA = 10;
   const DEFAULT_STANDS = { w: 'crimson', b: 'world' };
   const STANDS = {
+    gojo: {
+      name: 'Годжо Сатору',
+      user: 'Сатору',
+      art: 'gojo',
+      icon: 'infinity',
+      cost: 50,
+      manaCap: 100,
+      power: 'Безграничность',
+      action: 'Выбрать технику',
+      description:
+        'Бесконечность защищает фигуру до её хода. Синий смещает чужую фигуру на одну клетку, Красный — свою на две. Каждая третья техника — Фиолетовый.',
+    },
     dust: {
       name: 'Bites the Dust',
       user: 'Ёсикагэ Кира',
