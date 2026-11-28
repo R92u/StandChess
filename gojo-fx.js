@@ -5,6 +5,7 @@
   const art = new Map();
   let frame = 0,
     canvas,
+    cinema,
     concealed,
     sound;
   const clamp = (x) => Math.max(0, Math.min(1, x));
@@ -12,6 +13,8 @@
   function stop() {
     cancelAnimationFrame(frame);
     canvas?.remove();
+    cinema?.remove();
+    cinema = null;
     canvas = null;
     concealed?.classList.remove('gojo-in-flight');
     concealed = null;
@@ -53,6 +56,28 @@
     const flipped = board.classList.contains('flipped');
     const tile = layer.width / cols;
     ctx.scale(tile, layer.height / 8);
+    let light;
+    if (mode === 'purple') {
+      cinema = document.createElement('div');
+      cinema.className = 'purple-night' + (reduced ? ' quiet' : '');
+      cinema.setAttribute('aria-hidden', 'true');
+      const view = document.createElement('div');
+      view.className = 'purple-stage';
+      Object.assign(view.style, {
+        left: rect.left + 'px',
+        top: rect.top + 'px',
+        width: rect.width + 'px',
+        height: rect.height + 'px',
+      });
+      const lit = document.createElement('canvas');
+      lit.width = layer.width;
+      lit.height = layer.height;
+      view.append(lit, layer);
+      cinema.append(view);
+      document.body.append(cinema);
+      light = lit.getContext('2d');
+      light?.scale(tile, layer.height / 8);
+    }
     function point(sq) {
       const file = sq.charCodeAt(0) - 97;
       return [
@@ -93,6 +118,65 @@
       pos: point(u.square),
       img: sprite(u),
     }));
+    const nearby = light
+      ? [...board.querySelectorAll('.sq img[src*="assets/mobile/"]')].map(
+          (img) => {
+            const cell = img.closest('[data-square]');
+            const box = img.getBoundingClientRect();
+            return {
+              img,
+              pos: point(cell.dataset.square),
+              left: ((box.left - rect.left) * cols) / rect.width,
+              top: ((box.top - rect.top) * 8) / rect.height,
+              width: (box.width * cols) / rect.width,
+              height: (box.height * 8) / rect.height,
+            };
+          },
+        )
+      : [];
+    const tinted = new Map();
+    function litPiece(unit, px, py) {
+      const [ux, uy] = unit.pos,
+        distance = Math.hypot(ux - px, uy - py);
+      if (distance >= 2.85 || !unit.img.naturalWidth) return;
+      let sprite = tinted.get(unit.img.src);
+      if (!sprite) {
+        sprite = document.createElement('canvas');
+        sprite.width = sprite.height = 96;
+        const paint = sprite.getContext('2d');
+        paint.drawImage(unit.img, 0, 0, 96, 96);
+        paint.globalCompositeOperation = 'source-atop';
+        paint.fillStyle = 'rgba(204,125,255,.68)';
+        paint.fillRect(0, 0, 96, 96);
+        tinted.set(unit.img.src, sprite);
+      }
+      light.globalAlpha = (1 - distance / 2.85) ** 1.2;
+      light.drawImage(
+        sprite,
+        unit.left ?? ux - 0.5,
+        unit.top ?? uy - 0.5,
+        unit.width ?? 1,
+        unit.height ?? 1,
+      );
+    }
+    function illuminate(px, py, travel, released) {
+      if (!light) return;
+      light.globalAlpha = 1;
+      light.clearRect(0, 0, cols, 8);
+      const radius = reduced ? 1.4 : 2.85;
+      const halo = light.createRadialGradient(px, py, 0, px, py, radius);
+      halo.addColorStop(0, 'rgba(213,136,255,.68)');
+      halo.addColorStop(0.4, 'rgba(151,62,245,.28)');
+      halo.addColorStop(1, 'rgba(91,20,184,0)');
+      light.fillStyle = halo;
+      light.fillRect(px - radius, py - radius, radius * 2, radius * 2);
+      for (const unit of nearby) litPiece(unit, px, py);
+      for (const unit of victims) {
+        const along = (unit.pos[0] - x) * fx + (unit.pos[1] - y) * fy;
+        if (!released || along > length * travel + 0.15) litPiece(unit, px, py);
+      }
+      light.globalAlpha = 1;
+    }
     const moving = event.displaced && sprite(event.displaced);
     if (moving && !reduced) {
       const cell = board.querySelector('[data-square="' + dest + '"]');
@@ -194,6 +278,7 @@
       last = now;
       ctx.clearRect(0, 0, cols, 8);
       if (reduced) {
+        illuminate(x, y, 0, false);
         glow(x, y, 0.65, colors[mode], 0.6);
         if (dest) glow(endX, endY, 0.65, colors[mode], 0.6);
         return;
@@ -242,14 +327,7 @@
       const travel = ease((t - 9.03) / 0.88),
         px = x + dx * travel,
         py = y + dy * travel;
-      for (const {
-        pos: [vx, vy],
-        img,
-      } of victims) {
-        const along = (vx - x) * fx + (vy - y) * fy;
-        if (img.naturalWidth && (t < 9.03 || along > length * travel + 0.15))
-          ctx.drawImage(img, vx - 0.5, vy - 0.5, 1, 1);
-      }
+      illuminate(px, py, travel, t >= 9.03);
       ctx.globalAlpha = clamp((duration - t) / 0.34);
       if (t < 3.15) {
         const gap = 0.72 * (1 - ease((t - 0.58) / 2.55)),
@@ -288,6 +366,7 @@
   }
   window.addEventListener('pagehide', stop);
   window.addEventListener('resize', stop);
+  window.addEventListener('scroll', stop, { passive: true });
   board.addEventListener('pointerdown', stop);
   window.GojoFX = { play, stop };
 })();

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Вход в StandChess</title>
+    <link rel="stylesheet" href="assets/fonts/fonts.css" />
+    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="assets/mobile/layout.css" />
+    <link rel="stylesheet" href="assets/mobile/home.css" />
+  </head>
+  <body>
+    <main class="login-page social-panel">
+      <img src="assets/mark.svg" width="50" height="50" alt="" />
+      <h1>Вход в StandChess</h1>
+      <p>
+        Войдите через Google, затем вставьте одноразовый код в своё приложение
+        StandChess.
+      </p>
+      <button id="google" class="social-action primary" disabled>
+        Войти через Google
+      </button>
+      <div id="code-box" hidden>
+        <label>Код для приложения<input id="code" readonly /></label
+        ><button id="copy" class="social-action">Скопировать код</button>
+      </div>
+      <p id="message" role="status"></p>
+    </main>
+    <script type="module" src="signin.js"></script>
+  </body>
+</html>

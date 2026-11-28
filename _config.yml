@@ -2,5 +2,9 @@ exclude:
   - android
   - test
   - server.js
+  - accounts.cjs
+  - tools
+  - firebase.json
+  - firestore.rules
   - package.json
   - README.md

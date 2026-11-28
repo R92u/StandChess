@@ -45,6 +45,8 @@ public final class GameActivity extends Activity {
         String base = uri.buildUpon().clearQuery().fragment(null).build().toString();
         if (!base.equals(SITE) && !base.equals(INVITES)) return null;
         String room = uri.getQueryParameter("room");
+        String duel = uri.getQueryParameter("duel");
+        if (duel != null && ROOM.matcher(duel).matches()) return SITE + "?duel=" + duel;
         if (room != null && ROOM.matcher(room).matches()) return SITE + "?room=" + room;
         return "1".equals(uri.getQueryParameter("online")) ? SITE + "?online=1" : SITE;
     }
@@ -83,7 +85,7 @@ public final class GameActivity extends Activity {
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " StandChessAndroid/1.3");
+        settings.setUserAgentString(settings.getUserAgentString() + " StandChessAndroid/1.4");
         game.setWebChromeClient(new WebChromeClient());
         game.setWebViewClient(new GameClient());
         String start = saved == null ? null : saved.getString("url");

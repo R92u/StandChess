@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "scripts": {
+    "build": "esbuild entry.mjs --bundle --minify --format=esm --legal-comments=external --outfile=../../vendor/firebase.min.js"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "firebase": "13.4.0"
+  }
+}

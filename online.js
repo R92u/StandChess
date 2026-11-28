@@ -10,9 +10,11 @@ window.StandRoom = class StandRoom {
       : location.origin;
   }
   static invitation(id) {
-    const base = this.inAndroidApp && this.backend === 'https://standchess-r92u.onrender.com'
-      ? this.backend + '/'
-      : new URL(location.pathname, location.origin);
+    const base =
+      this.inAndroidApp &&
+      this.backend === 'https://standchess-r92u.onrender.com'
+        ? this.backend + '/'
+        : new URL(location.pathname, location.origin);
     const url = new URL(base);
     url.searchParams.set('room', id);
     return url.href;
@@ -25,6 +27,7 @@ window.StandRoom = class StandRoom {
   reset() {
     clearTimeout(this.timer);
     this.id = this.side = this.key = null;
+    this.duel = false;
     this.version = -1;
     this.connected = this.ready = this.busy = false;
   }
@@ -40,10 +43,10 @@ window.StandRoom = class StandRoom {
       return null;
     }
   }
-  async request(id, key, op, body, since, at) {
+  async request(id, key, op, body, since, at, duel = this.duel) {
     const url =
       StandRoom.backend +
-      '/api/rooms/' +
+      (duel ? '/api/duels/' : '/api/rooms/') +
       id +
       (op ? '/' + op : '') +
       (at !== undefined
@@ -58,7 +61,9 @@ window.StandRoom = class StandRoom {
       headers,
       body: body ? JSON.stringify(body) : undefined,
       cache: 'no-store',
-      signal: AbortSignal.timeout(op === 'create' || op === 'join' ? 90000 : 15000),
+      signal: AbortSignal.timeout(
+        ['create', 'join', 'enter'].includes(op) ? 90000 : 15000,
+      ),
     });
     if (response.status === 204) return null;
     const data = await response.json().catch(() => ({}));
@@ -74,10 +79,35 @@ window.StandRoom = class StandRoom {
     try {
       localStorage.setItem('stand-chess.seat.' + id, key);
     } catch {}
-    const data = await this.request(id, key, op, op ? { stand } : undefined);
+    const data = await this.request(
+      id,
+      key,
+      op,
+      op ? { stand } : undefined,
+      undefined,
+      undefined,
+      false,
+    );
     this.reset();
     this.id = id;
     this.key = key;
+    this.apply(data, true);
+    this.schedule();
+  }
+  async enterDuel(id, token) {
+    const data = await this.request(
+      id,
+      token,
+      'enter',
+      undefined,
+      undefined,
+      undefined,
+      true,
+    );
+    this.reset();
+    this.id = id;
+    this.key = data.seat;
+    this.duel = true;
     this.apply(data, true);
     this.schedule();
   }

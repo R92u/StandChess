@@ -2,9 +2,12 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const { randomBytes } = require('node:crypto');
+const { duelSeat, mobileLogin } = require('./accounts.cjs');
 const { StandGame, STANDS } = require('./engine');
 
 const rooms = new Map();
+const duelInstance = randomBytes(16).toString('hex');
 const isSecret = (event) => event?.kind === 'ability' && event.stand === 'dust';
 function seatVersion(room, side) {
   return room.version - room.privateUpdates[side === 'w' ? 'b' : 'w'];
@@ -26,11 +29,11 @@ function reply(res, status, data) {
 function fail(res, status, error) {
   return reply(res, status, { error });
 }
-async function readAction(req) {
+async function readAction(req, limit = 1024) {
   let body = '';
   for await (const chunk of req) {
     body += chunk;
-    if (body.length > 1024) throw new Error('Слишком большой запрос');
+    if (body.length > limit) throw new Error('Слишком большой запрос');
   }
   return body ? JSON.parse(body) : {};
 }
@@ -196,6 +199,10 @@ async function roomApi(req, res, url, id, op) {
 }
 
 const publicFiles = new Set([
+  'home.js',
+  'social.js',
+  'signin.js',
+  'signin.html',
   '.well-known/assetlinks.json',
   'index.html',
   'style.css',
@@ -275,23 +282,81 @@ const server = http.createServer(async (req, res) => {
       /^\/api\/rooms\/([0-9a-f]{24})(?:\/(create|join|action))?$/.exec(
         url.pathname,
       );
-    if (route) {
+    const duel = /^\/api\/duels\/([0-9a-f]{24})(?:\/(enter|action))?$/.exec(
+      url.pathname,
+    );
+    const login = /^\/api\/account\/(transfer|redeem)$/.exec(url.pathname);
+    const instance = url.pathname === '/api/duels/instance';
+    if (route || duel || login || instance) {
       res.setHeader('Vary', 'Origin');
       if (req.headers.origin === 'https://r92u.github.io') {
         res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
         if (req.method === 'OPTIONS') {
           res.setHeader('Access-Control-Allow-Methods', 'GET, POST');
-          res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+          res.setHeader(
+            'Access-Control-Allow-Headers',
+            'Authorization, Content-Type',
+          );
           res.setHeader('Access-Control-Max-Age', '600');
           return reply(res, 204);
         }
+      }
+      if (instance)
+        return req.method === 'GET'
+          ? reply(res, 200, { instance: duelInstance })
+          : fail(res, 405, 'Требуется GET.');
+      if (login) {
+        if (req.method !== 'POST') return fail(res, 405, 'Требуется POST.');
+        let data;
+        try {
+          data = await readAction(req, 8192);
+        } catch {
+          return fail(res, 400, 'Некорректный запрос.');
+        }
+        return reply(res, 200, await mobileLogin(login[1], data));
+      }
+      if (duel) {
+        const id = 'duel:' + duel[1];
+        if (duel[2] !== 'enter')
+          return await roomApi(req, res, url, id, duel[2]);
+        if (req.method !== 'POST') return fail(res, 405, 'Требуется POST.');
+        const access = await duelSeat(
+          duel[1],
+          /^Bearer (\S+)$/.exec(req.headers.authorization || '')?.[1],
+        );
+        let room = rooms.get(id);
+        if (!room) {
+          if (
+            access.instance !== duelInstance ||
+            Date.now() - access.accepted > ttl
+          )
+            return fail(res, 410, 'Комната закрыта. Отправьте новый вызов.');
+          if (rooms.size >= 500)
+            return fail(res, 503, 'Сервер занят. Попробуйте позже.');
+          room = {
+            game: new StandGame(undefined, 0, access.stands),
+            w: randomBytes(24).toString('hex'),
+            b: randomBytes(24).toString('hex'),
+            version: 1,
+            privateUpdates: { w: 0, b: 0 },
+            seen: Date.now(),
+          };
+          rememberDustPosition(room);
+          rooms.set(id, room);
+        }
+        room.seen = Date.now();
+        return reply(res, 200, {
+          ...roomState(room, access.side),
+          seat: room[access.side],
+        });
       }
       return await roomApi(req, res, url, route[1], route[2]);
     }
     if (req.method !== 'GET' && req.method !== 'HEAD')
       return fail(res, 405, 'Метод не поддерживается.');
     return await serveFile(req, res, url.pathname);
-  } catch {
+  } catch (error) {
+    if (!res.headersSent && error.status) return fail(res,error.status,error.message);
     if (!res.headersSent) fail(res, 500, 'Ошибка сервера.');
     else res.destroy();
   }

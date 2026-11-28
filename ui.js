@@ -3,6 +3,8 @@
   const { StandGame, MAX_MANA, STANDS, inTower } = window.StandChess;
   const $ = (id) => document.getElementById(id);
   const icons = {
+    home: '<path d="m3 10 9-7 9 7v11h-6v-7H9v7H3z"/>',
+    bell: '<path d="M4 17c2-2 2-4 2-7a6 6 0 1 1 12 0c0 3 0 5 2 7H4zm6 3a2 2 0 0 0 4 0"/>',
     infinity:
       '<path d="M12 12C9 7 8 6 6 6c-5 0-5 12 0 12 3 0 5-4 6-6s4-6 7-6c5 0 5 12 0 12-3 0-5-3-7-6Z"/>',
     menu: '<path d="M3 5h18M3 12h18M3 19h18"/>',
@@ -937,6 +939,11 @@
     analysisRun = 0,
     openingTimer;
   function showReport() {
+    if (document.documentElement.dataset.view === 'home') return;
+    if (document.querySelector('.purple-night')) {
+      openingTimer = setTimeout(showReport, 300);
+      return;
+    }
     if (game.result() && !$('review-dialog').open)
       $('review-dialog').showModal();
   }
@@ -962,7 +969,8 @@
       clearTimeout(openingTimer);
       $('review-dialog').close();
       $('analysis-rows').replaceChildren();
-      if (finished && (!invitedRoom() || online.id)) {
+      const connecting = invitedRoom() || new URL(location.href).searchParams.has('duel');
+      if (finished && (!connecting || online.id)) {
         const mate = finished.startsWith('Мат');
         const winner = mate ? (game.turn() === 'w' ? 'b' : 'w') : '';
         $('review-heading').textContent = mate
@@ -1228,6 +1236,18 @@
     $('turn').innerHTML =
       (result ? '<i>' + icon('flag') + '</i>' : stone(color)) + '<span></span>';
     $('turn').lastElementChild.textContent = turnLabel;
+    if (!review) {
+      const position = online.id
+        ? 'Онлайн · ' + turnLabel
+        : s.events.length
+          ? turnLabel + ' · ход ' + s.fen.split(' ')[5]
+          : 'Начальная позиция';
+      window.StandHome.position(
+        position,
+        Boolean(s.events.length || online.id),
+        result,
+      );
+    }
     $('turn').classList.toggle('in-check', check);
     $('turn').classList.toggle('frozen', Boolean(s.freeze) && !result);
     $('turn').classList.toggle('finished', Boolean(result));
@@ -2115,9 +2135,10 @@
   );
   function roomURL(id) {
     const url = new URL(location.href);
-    if (id) url.searchParams.set('room', id);
-    else url.searchParams.delete('room');
-    url.hash = '';
+    url.searchParams.delete('duel');
+    url.searchParams.delete('room');
+    if (id) url.searchParams.set(online.duel ? 'duel' : 'room', id);
+    url.hash = 'arena';
     return url;
   }
   function roomFeedback(text = '') {
@@ -2165,7 +2186,7 @@
   function renderRoomDialog() {
     const active = Boolean(online.id),
       invite = invitedRoom();
-    $('invite-tools').hidden = !active;
+    $('invite-tools').hidden = !active || online.duel;
     $('seat-stand-label').hidden = active || location.protocol === 'file:';
     $('room-enter').hidden = active || location.protocol === 'file:';
     $('online-public').hidden =
@@ -2180,7 +2201,7 @@
         ? 'Войти за чёрных'
         : 'Создать комнату';
     if (active) {
-      renderInvitation(online.id);
+      if (!online.duel) renderInvitation(online.id);
       $('online-info').textContent = !online.connected
         ? 'Восстанавливаем связь с комнатой…'
         : online.ready
@@ -2207,6 +2228,7 @@
     motion.clear();
     online.reset();
     history.replaceState(null, '', roomURL(null));
+    window.StandHome.route();
     game = mainGame;
     flipped = storage.read('flipped') === 'yes';
     window.StandEffects.stop();
@@ -2233,6 +2255,7 @@
       flipped = data.side === 'b';
       showTowerZone = true;
       history.replaceState(null, '', roomURL(online.id));
+      window.StandHome.route();
       window.StandEffects.stop();
     }
     resetSelection();
@@ -2332,6 +2355,26 @@
   }
   $('leave-match').onclick = leaveMatch;
   $('room-leave').onclick = leaveMatch;
+  $('room-board').addEventListener('click', () => window.StandHome.board());
+  window.StandDuels = {
+    async enter(id, token) {
+      if (online.id === id && online.duel) {
+        window.StandHome.board();
+        return;
+      }
+      if (online.id || enteringRoom)
+        throw Error('Сначала выйдите из текущей онлайн-партии.');
+      enteringRoom = true;
+      try {
+        await online.enterDuel(id, token);
+      } finally {
+        enteringRoom = false;
+      }
+    },
+    leave() {
+      if (online.duel) leaveMatch();
+    },
+  };
   $('invite-copy').onclick = async () => {
     try {
       await navigator.clipboard.writeText($('invite-url').value);
@@ -2357,6 +2400,7 @@
       b: $('pick-b').value,
     });
     mainGame = game;
+    window.StandHome.board();
     $('restart').close();
     stopAudio();
     changed();
@@ -2386,6 +2430,7 @@
     dlg.addEventListener('beforetoggle', (e) => {
       if (e.newState === 'open') {
         cancelGesture();
+        window.GojoFX.stop();
         window.StandEffects.stop();
         stopAudio();
       }

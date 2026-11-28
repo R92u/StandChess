@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="assets/fonts/fonts.css" />
     <link rel="stylesheet" href="style.css?v=2" />
     <link rel="stylesheet" href="assets/mobile/layout.css?v=5" />
+    <link rel="stylesheet" href="assets/mobile/home.css" />
     <script defer src="vendor/chess.min.js"></script>
     <script defer src="variants.js?v=5"></script>
     <script defer src="engine.js?v=5"></script>
@@ -16,13 +17,123 @@
     <script defer src="effects.js?v=2"></script>
     <script defer src="piece-effects.js"></script>
     <script defer src="board-fx.js?v=2"></script>
-    <script defer src="online.js"></script>
+    <script defer src="online.js?v=2"></script>
     <script defer src="vendor/qrcodegen.js"></script>
     <script defer src="board-motion.js?v=2"></script>
-    <script defer src="gojo-fx.js?v=3"></script>
-    <script defer src="ui.js?v=8"></script>
+    <script defer src="gojo-fx.js?v=4"></script>
+    <script defer src="home.js"></script>
+    <script defer src="ui.js?v=9"></script>
   </head>
   <body>
+    <main id="home-screen" aria-label="Главная">
+      <header class="home-top">
+        <div class="home-bar">
+          <button id="home-profile" class="home-profile">
+            <span class="home-avatar" aria-hidden="true"></span>
+            <span>
+              <small>Профиль</small>
+              <strong id="home-nickname">Гость</strong>
+            </span>
+          </button>
+          <div class="home-utilities">
+            <button data-social="friends" aria-label="Друзья">
+              <i data-icon="players"></i>
+            </button>
+            <button data-social="inbox" aria-label="Приглашения">
+              <i data-icon="bell"></i>
+              <b class="social-count" hidden></b>
+            </button>
+          </div>
+        </div>
+      </header>
+      <div class="home-content">
+        <section class="home-hero" aria-labelledby="home-mode">
+          <div class="home-hero-art" aria-hidden="true">
+            <div class="home-checkers"></div>
+            <img src="assets/art/the-world.webp" alt="" />
+          </div>
+          <div class="hero-copy">
+            <img class="home-mark" src="assets/mark.svg" alt="" />
+            <h1 id="home-mode">
+              Шахматы
+              <br />
+              со стендами
+            </h1>
+          </div>
+          <div class="hero-footer">
+            <span id="home-position">Начальная позиция</span>
+            <a class="home-play" href="#arena" id="hero-play">
+              Играть
+              <span aria-hidden="true">→</span>
+            </a>
+          </div>
+        </section>
+        <section class="home-section">
+          <h2>Партия</h2>
+          <div class="home-actions">
+            <button id="new-game" class="home-action">
+              <span class="action-icon new"><i data-icon="plus"></i></span>
+              <span>
+                <strong>Новая партия</strong>
+                <small>На одном устройстве</small>
+              </span>
+            </button>
+            <button id="online-open" class="home-action">
+              <span class="action-icon online"><i data-icon="players"></i></span>
+              <span>
+                <strong>Онлайн</strong>
+                <small>Комната для двоих</small>
+              </span>
+            </button>
+          </div>
+        </section>
+        <section class="home-section">
+          <div class="home-section-title">
+            <h2>Друзья</h2>
+            <button data-social="friends">Найти друга</button>
+          </div>
+          <div id="home-friends" class="home-friends">
+            <button class="friend-empty" data-social="friends">
+              <span class="friend-avatar">+</span>
+              <span>Добавить друга</span>
+            </button>
+          </div>
+        </section>
+      </div>
+      <footer class="home-dock">
+        <div>
+          <a class="home-play" href="#arena" id="dock-play">Играть</a>
+          <nav aria-label="Навигация главного меню">
+            <a href="#home" aria-current="page">
+              <i data-icon="home"></i>
+              Главная
+            </a>
+            <button data-social="friends">
+              <i data-icon="players"></i>
+              Друзья
+            </button>
+            <button data-panel="preferences">
+              <i data-icon="settings"></i>
+              Настройки
+            </button>
+          </nav>
+        </div>
+      </footer>
+    </main>
+    <dialog
+      id="social-panel"
+      class="phone-sheet social-panel"
+      aria-labelledby="social-title"
+    >
+      <header class="dialog-heading">
+        <h2 id="social-title">Профиль</h2>
+        <button class="icon-button close" aria-label="Закрыть">
+          <i data-icon="x"></i>
+        </button>
+      </header>
+      <div id="social-body"></div>
+      <p id="social-feedback" role="status"></p>
+    </dialog>
     <div class="app-shell">
       <main id="arena">
         <div class="arena-layout">
@@ -218,12 +329,7 @@
             <a class="rail-item current" href="#arena" aria-current="page"
               ><i data-icon="swords"></i><span>Играть</span></a
             >
-            <button class="rail-item" id="new-game" title="Новая партия">
-              <i data-icon="plus"></i><span>Новая партия</span>
-            </button>
-            <button class="rail-item" id="online-open" title="Онлайн">
-              <i data-icon="players"></i><span>Онлайн</span>
-            </button>
+            <a class="rail-item" href="#home"><i data-icon="home"></i><span>Главная</span></a>
             <div class="rail-divider"></div>
           </nav>
           <div class="rail-bottom">
@@ -254,9 +360,6 @@
         </button>
         <button data-command="leave-match" hidden>
           <i data-icon="x"></i>Выйти из онлайн-игры
-        </button>
-        <button data-panel="preferences">
-          <i data-icon="settings"></i>Настройки
         </button>
       </div>
     </dialog>

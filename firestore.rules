@@ -1,0 +1,51 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signed() { return request.auth != null && request.auth.token.firebase.sign_in_provider == 'google.com'; }
+    function uid() { return request.auth.uid; }
+    function profile(id) { return /databases/$(database)/documents/profiles/$(id); }
+    function handle(key) { return /databases/$(database)/documents/handles/$(key); }
+    function relation(a, b) { return /databases/$(database)/documents/friends/$(a + '~' + b); }
+    function friends(a, b) {
+      return (exists(relation(a,b)) && get(relation(a,b)).data.status == 'friends')
+        || (exists(relation(b,a)) && get(relation(b,a)).data.status == 'friends');
+    }
+    function participant(d) { return signed() && (uid() == d.from || uid() == d.to); }
+    function initial(d) { return signed() && uid() == d.from && d.from != d.to && exists(profile(d.from)) && exists(profile(d.to)); }
+    function stand(s) { return s in ['crimson','world','echoes','diamond','superfly','enigma','gold','kiss','heaven','house','wonder','dust','sticky','gojo']; }
+    match /profiles/{id} {
+      allow get: if signed();
+      allow create: if signed() && uid() == id && request.resource.data.keys().hasOnly(['nick','key'])
+        && request.resource.data.nick.matches('[A-Za-zА-Яа-яЁё0-9_]{3,20}')
+        && request.resource.data.key.matches('[a-zа-яё0-9_]{3,20}')
+        && request.resource.data.nick.matches('(?i)^' + request.resource.data.key + '$')
+        && getAfter(handle(request.resource.data.key)).data.uid == id;
+    }
+    match /handles/{key} {
+      allow get: if signed();
+      allow create: if signed() && request.resource.data.keys().hasOnly(['uid']) && request.resource.data.uid == uid()
+        && getAfter(profile(uid())).data.key == key;
+    }
+    match /friends/{id} {
+      allow read: if participant(resource.data);
+      allow create: if initial(request.resource.data) && request.resource.data.keys().hasOnly(['from','to','status'])
+        && id == request.resource.data.from + '~' + request.resource.data.to && !exists(relation(request.resource.data.to,uid()))
+        && request.resource.data.status == 'pending';
+      allow update: if signed() && uid() == resource.data.to && resource.data.status == 'pending'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) && request.resource.data.status == 'friends';
+      allow delete: if participant(resource.data);
+    }
+    match /duels/{id} {
+      allow read: if participant(resource.data);
+      allow create: if initial(request.resource.data) && friends(uid(),request.resource.data.to)
+        && id.matches('[0-9a-f]{24}') && request.resource.data.keys().hasOnly(['from','to','hostStand','status','created'])
+        && request.resource.data.status == 'pending' && stand(request.resource.data.hostStand) && request.resource.data.created == request.time;
+      allow update: if signed() && uid() == resource.data.to && resource.data.status == 'pending'
+        && request.time < resource.data.created + duration.value(24,'h') && friends(uid(),resource.data.from)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','guestStand','accepted','instance'])
+        && request.resource.data.instance.matches('[0-9a-f]{32}')
+        && request.resource.data.status == 'accepted' && stand(request.resource.data.guestStand) && request.resource.data.accepted == request.time;
+      allow delete: if participant(resource.data);
+    }
+  }
+}
