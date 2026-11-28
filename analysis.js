@@ -160,9 +160,13 @@
     const archivedPurple =
       a.stand === 'gojo' &&
       a.choice?.startsWith('purple:') &&
-      !a.width &&
       Array.isArray(a.victims);
-    return g.activate(a.color, a.target, a.choice, archivedPurple);
+    return g.activate(
+      a.color,
+      a.target,
+      a.choice,
+      archivedPurple ? a.width || 5 : 0,
+    );
   }
   function actions(g) {
     const c = g.turn(),

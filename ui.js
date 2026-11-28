@@ -500,11 +500,13 @@
     board.classList.toggle('flipped', flipped);
     const abilityTargets = targeting
       ? gojoMode
-        ? gojoOptions()
-            .filter((o) => !targetOrigin || o.target === targetOrigin)
-            .map((o) =>
-              targetOrigin ? o.choice.split(':')[1] : cellOf(o.target),
-            )
+        ? gojoMode === 'purple'
+          ? gojoOptions().map((o) => o.target)
+          : gojoOptions()
+              .filter((o) => !targetOrigin || o.target === targetOrigin)
+              .map((o) =>
+                targetOrigin ? o.choice.split(':')[1] : cellOf(o.target),
+              )
         : targetOrigin
           ? game
               .choices(targeting)
@@ -1117,7 +1119,7 @@
     let worker = null;
     try {
       if (location.protocol !== 'file:' && typeof Worker !== 'undefined')
-        worker = new Worker('analysis-worker.js?v=4');
+        worker = new Worker('analysis-worker.js?v=5');
       async function analyse(before, after, event) {
         if (worker) {
           try {
@@ -1255,15 +1257,15 @@
         gojo:
           gojoMode === 'purple'
             ? purpleEnd
-              ? 'Под ударом ' +
-                (targetOrigin[0] === purpleEnd[0] ? 'вертикали ' : 'ряды ') +
+              ? targetOrigin +
+                ' → ' +
+                purpleEnd +
+                ' · Под ударом вертикали ' +
                 [targetOrigin, StandGame.purpleBand(targetOrigin, purpleEnd)[8]]
-                  .map((sq) => sq[targetOrigin[0] === purpleEnd[0] ? 0 : 1])
+                  .map((sq) => sq[0])
                   .join(' и ') +
                 '.'
-              : targetOrigin
-                ? 'Выберите конец линии на противоположном краю.'
-                : 'Выберите край доски для Фиолетового.'
+              : 'Выберите вертикаль для выстрела от 1-й горизонтали до 8-й.'
             : gojoMode === 'infinity'
               ? 'Бесконечность · выберите фигуру для защиты.'
               : targetOrigin
@@ -1491,6 +1493,14 @@
       const id = game.state.stands[targeting];
       if (id === 'gojo') {
         const opts = gojoOptions();
+        if (gojoMode === 'purple') {
+          const line = opts.find((o) => o.target[0] === square[0]);
+          if (!line) return;
+          targetOrigin = line.target;
+          purpleEnd = line.choice.split(':')[1];
+          render();
+          return;
+        }
         if (targetOrigin) {
           if (
             !opts.some(
@@ -1500,10 +1510,7 @@
             )
           )
             return;
-          if (gojoMode === 'purple') {
-            purpleEnd = square;
-            render();
-          } else useStand(targeting, targetOrigin, gojoMode + ':' + square);
+          useStand(targeting, targetOrigin, gojoMode + ':' + square);
           return;
         }
         const keys = [

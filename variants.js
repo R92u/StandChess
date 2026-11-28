@@ -426,15 +426,15 @@
       }
       return found;
     }
-    function gojoOptions(p, c) {
+    function gojoOptions(p, c, archived = false) {
       const list = [];
       if (p.gojo[c] === 2) {
         for (const f of files) {
-          list.push(
-            { target: f + '1', choice: 'purple:' + f + '8' },
-            { target: f + '8', choice: 'purple:' + f + '1' },
-          );
+          list.push({ target: f + '1', choice: 'purple:' + f + '8' });
+          if (archived)
+            list.push({ target: f + '8', choice: 'purple:' + f + '1' });
         }
+        if (!archived) return list;
         for (const r of '12345678') {
           list.push(
             { target: 'a' + r, choice: 'purple:h' + r },
@@ -935,9 +935,9 @@
           return 'Нет доступной цели';
         return '';
       }
-      activate(c, target, choice, legacyPurple = false) {
+      activate(c, target, choice, archivedWidth = 0) {
         if (
-          legacyPurple
+          archivedWidth
             ? this.p.stands[c] !== 'gojo' ||
               this.turn() !== c ||
               this.state.freeze ||
@@ -975,17 +975,17 @@
           s.position.snared[other(c)] = true;
           event.detail = 'Ловушка на следующий ход';
         } else {
-          const direct = id === 'gojo' && (legacyPurple || !this.cache.has(c));
-          const opt = (direct ? gojoOptions(p, c) : this.choices(c)).find(
-            (o) => o.target === target && o.choice === choice,
-          );
+          const direct = id === 'gojo' && (archivedWidth || !this.cache.has(c));
+          const opt = (
+            direct ? gojoOptions(p, c, !!archivedWidth) : this.choices(c)
+          ).find((o) => o.target === target && o.choice === choice);
           if (
             !opt ||
-            (direct && !legacyPurple && !validChoice(p, c, opt, s.mana[c]))
+            (direct && !archivedWidth && !validChoice(p, c, opt, s.mana[c]))
           )
             return false;
           const victims = [];
-          s.position = applyChoice(p, c, opt, victims, legacyPurple);
+          s.position = applyChoice(p, c, opt, victims, archivedWidth === 5);
           addCalamity(event, victims);
           event.piece = s.position.units[target]?.type;
           event.detail =
@@ -1003,7 +1003,7 @@
             event.text = names[mode];
             event.detail = cellOf(target) + (dest ? ' → ' + dest : '');
             if (mode === 'purple') {
-              if (!legacyPurple) event.width = 2;
+              if (archivedWidth !== 5) event.width = 2;
               event.victims = Object.entries(p.units)
                 .filter(([key]) => !s.position.units[key])
                 .map(([key, u]) => ({

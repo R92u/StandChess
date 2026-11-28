@@ -79,6 +79,10 @@
         offsetY ? 2 : 8,
       );
       ctx.clip();
+      if (event.target[1] === '1' && dest[1] === '8') {
+        y = flipped ? 0 : 8;
+        endY = flipped ? 8 : 0;
+      }
     }
     const dx = endX - x,
       dy = endY - y;

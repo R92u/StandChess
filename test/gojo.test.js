@@ -80,18 +80,33 @@ test('the third technique hits exactly two adjacent lines with immunity and a fr
   assert.ok(g.choices('w').every((o) => o.choice.startsWith('purple:')));
   assert.equal(g.activate('w', 'a4', 'purple:h5'), false);
   assert.equal(g.activate('w', 'g4', 'infinity'), false);
-  assert.ok(g.activate('w', 'h4', 'purple:a4'));
+  assert.equal(g.activate('w', 'h4', 'purple:a4'), false);
+  assert.equal(g.activate('w', 'g8', 'purple:g1'), false);
+  assert.ok(g.activate('w', 'g1', 'purple:g8'));
   assert.equal(g.turn(), 'b');
   assert.deepEqual(g.p.gojo, { w: 0, b: 0 });
   assert.equal(g.state.mana.w, 50);
-  for (const sq of ['b5', 'g4']) assert.equal(g.p.units[sq], undefined);
-  for (const sq of ['h8', 'e1', 'a1', 'b7', 'c4~1', 'g6', 'a2', 'g2'])
+  for (const sq of ['g4', 'g6', 'g2']) assert.equal(g.p.units[sq], undefined);
+  for (const sq of ['h8', 'e1', 'a1', 'b7', 'c4~1', 'a2', 'b5'])
     assert.ok(g.p.units[sq]);
-  assert.equal(g.state.events.at(-1).victims.length, 2);
+  assert.equal(g.state.events.at(-1).victims.length, 3);
   assert.equal(g.state.events.at(-1).width, 2);
 });
 
-test('all 32 paths span exactly 16 main-board squares in both directions', () => {
+test('the eight playable paths always start on rank one and end on rank eight', () => {
+  const g = game();
+  g.p.gojo.w = 2;
+  g.record();
+  assert.deepEqual(
+    g.choices('w'),
+    [...'abcdefgh'].map((f) => ({
+      target: f + '1',
+      choice: 'purple:' + f + '8',
+    })),
+  );
+});
+
+test('all eight files and archived paths span exactly two adjacent lines', () => {
   for (const vertical of [true, false]) {
     const lanes = vertical ? 'abcdefgh' : '12345678';
     for (const [i, lane] of [...lanes].entries()) {
@@ -128,7 +143,22 @@ test('previous wide shots replay from their journal while new shots use the two-
     }),
   );
   assert.equal(old.p.units.b2, undefined);
-  assert.ok(saved.activate('w', 'a4', 'purple:h4'));
+  const v131 = StandGame.restore(saved.snapshot());
+  assert.ok(
+    replay(v131, {
+      kind: 'ability',
+      stand: 'gojo',
+      color: 'w',
+      target: 'a4',
+      choice: 'purple:h4',
+      width: 2,
+      victims: [],
+    }),
+  );
+  assert.ok(v131.p.units.b2);
+  assert.equal(v131.p.units.c4, undefined);
+  assert.equal(saved.activate('w', 'a4', 'purple:h4'), false);
+  assert.ok(saved.activate('w', 'c1', 'purple:c8'));
   assert.ok(saved.p.units.b2);
 });
 
