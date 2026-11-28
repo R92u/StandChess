@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 46">
-  <defs><linearGradient id="jade" x2=".8" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#deffe5"/><stop offset=".44" stop-color="#a5ddba"/><stop offset="1" stop-color="#69ad94"/></linearGradient></defs>
-  <path fill="url(#jade)" stroke="#d1f1d6" stroke-width=".9" stroke-linejoin="round" d="M5 39h28l1 3H4zM8 34c1-6 4-10 11-14l-7 2-4 2-5-4 4-8 8-6 3-5 2 6 5-3 1 4c8 4 11 14 8 26z"/>
-  <path d="m16 13-3 3 4-1zM10 36h22" fill="#1b3a30" stroke="#345c4b" stroke-width="1.5"/>
-  <path d="M24 10c6 4 8 11 7 18" stroke="#e5ffec" fill="none" opacity=".7" stroke-linecap="round"/>
+  <defs><linearGradient id="ice" x2=".8" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#e5f5ff"/><stop offset=".44" stop-color="#a7d9f7"/><stop offset="1" stop-color="#69a7d4"/></linearGradient></defs>
+  <path fill="url(#ice)" stroke="#d1efff" stroke-width=".9" stroke-linejoin="round" d="M5 39h28l1 3H4zM8 34c1-6 4-10 11-14l-7 2-4 2-5-4 4-8 8-6 3-5 2 6 5-3 1 4c8 4 11 14 8 26z"/>
+  <path d="m16 13-3 3 4-1zM10 36h22" fill="#173248" stroke="#34546d" stroke-width="1.5"/>
+  <path d="M24 10c6 4 8 11 7 18" stroke="#e9f8ff" fill="none" opacity=".7" stroke-linecap="round"/>
 </svg>

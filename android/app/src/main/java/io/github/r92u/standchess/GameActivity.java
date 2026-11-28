@@ -62,6 +62,8 @@ public final class GameActivity extends Activity {
         retry = new Button(this);
         retry.setText("Версия из APK · Проверить обновление");
         retry.setAllCaps(false);
+        retry.setTextColor(Color.rgb(224, 239, 251));
+        retry.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(31, 62, 88)));
         retry.setVisibility(View.GONE);
         retry.setOnClickListener(view -> {
             bundled = false;
@@ -70,7 +72,7 @@ public final class GameActivity extends Activity {
         });
         frame.addView(retry);
         game = new WebView(this);
-        game.setBackgroundColor(Color.rgb(16, 29, 32));
+        game.setBackgroundColor(Color.rgb(6, 22, 38));
         frame.addView(game, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(frame);
 

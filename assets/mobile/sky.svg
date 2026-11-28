@@ -1,4 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 960" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="sky" x2=".23" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#04101d"/><stop offset=".52" stop-color="#041d33"/><stop offset="1" stop-color="#073863"/></linearGradient><filter id="mist"><feTurbulence type="fractalNoise" baseFrequency=".009 .005" numOctaves="3" seed="8"/><feColorMatrix type="matrix" values="0 0 0 0 .09 0 0 0 0 .35 0 0 0 0 .55 0 0 2 0 -.88"/></filter></defs><path fill="url(#sky)" d="M0 0h480v960H0z"/><path fill="#166289" opacity=".38" filter="url(#mist)" d="M0 0h480v960H0z"/>
+<svg xmlns="http://www.w3.org/2000/svg">
+<defs><linearGradient id="sky" x2=".23" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#04101d"/><stop offset=".52" stop-color="#041d33"/><stop offset="1" stop-color="#073863"/></linearGradient><filter id="mist"><feTurbulence type="fractalNoise" baseFrequency=".009 .005" numOctaves="3" seed="8"/><feColorMatrix type="matrix" values="0 0 0 0 .09 0 0 0 0 .35 0 0 0 0 .55 0 0 2 0 -.88"/></filter>
+<pattern id="stars" width="480" height="960" patternUnits="userSpaceOnUse">
 <circle cx="26.9" cy="622.3" r="0.5" fill="#daedff" opacity="0.23"/>
 <circle cx="111.3" cy="176.9" r="0.5" fill="#daedff" opacity="0.19"/>
 <circle cx="175.9" cy="260.3" r="0.72" fill="#daedff" opacity="0.30"/>
@@ -1165,4 +1167,8 @@
 <circle cx="246.7" cy="125.7" r="0.5" fill="#daedff" opacity="0.33"/>
 <circle cx="369.3" cy="37.1" r="0.5" fill="#daedff" opacity="0.21"/>
 <circle cx="342.6" cy="104.7" r="0.5" fill="#daedff" opacity="0.35"/>
+</pattern></defs>
+<rect width="100%" height="100%" fill="url(#sky)"/>
+<rect width="100%" height="100%" fill="#166289" opacity=".18" filter="url(#mist)"/>
+<rect width="100%" height="100%" fill="url(#stars)"/>
 </svg>

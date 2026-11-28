@@ -121,7 +121,7 @@
             : 'calamity-victim';
       img.alt = '';
       img.src =
-        'assets/pieces/' + victim.color + victim.type.toUpperCase() + '.svg';
+        'assets/mobile/' + victim.color + (victim.walk || victim.type).toLowerCase() + '.png';
       node.prepend(img);
     }
   }
