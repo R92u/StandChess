@@ -3,6 +3,9 @@ exclude:
   - test
   - server.js
   - accounts.cjs
+  - tournament.cjs
+  - tournament-store.cjs
+  - room-game.cjs
   - tools
   - firebase.json
   - firestore.rules

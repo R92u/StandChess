@@ -9,6 +9,11 @@ window.StandRoom = class StandRoom {
       ? 'https://standchess-r92u.onrender.com'
       : location.origin;
   }
+  static get tournamentBackend() {
+    return ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)
+      ? location.origin
+      : 'https://standchess-tournament-r92u.onrender.com';
+  }
   static invitation(id) {
     const base =
       this.inAndroidApp &&
@@ -28,6 +33,7 @@ window.StandRoom = class StandRoom {
     clearTimeout(this.timer);
     this.id = this.side = this.key = null;
     this.duel = false;
+    this.tournament = null;
     this.version = -1;
     this.connected = this.ready = this.busy = false;
   }
@@ -44,9 +50,11 @@ window.StandRoom = class StandRoom {
     }
   }
   async request(id, key, op, body, since, at, duel = this.duel) {
+    const cup = this.tournament && this.id === id;
     const url =
-      StandRoom.backend +
-      (duel ? '/api/duels/' : '/api/rooms/') +
+      (cup
+        ? StandRoom.tournamentBackend + '/api/tournament/games/'
+        : StandRoom.backend + (duel ? '/api/duels/' : '/api/rooms/')) +
       id +
       (op ? '/' + op : '') +
       (at !== undefined
@@ -54,7 +62,9 @@ window.StandRoom = class StandRoom {
         : since === undefined
           ? ''
           : '?since=' + since);
-    const headers = { Authorization: 'Bearer ' + key };
+    const headers = {
+      Authorization: 'Bearer ' + (cup ? await this.tournament.token() : key),
+    };
     if (body) headers['Content-Type'] = 'application/json';
     const response = await fetch(url, {
       method: op ? 'POST' : 'GET',
@@ -114,6 +124,18 @@ window.StandRoom = class StandRoom {
   apply(data, first = false) {
     const reconnect = !this.connected;
     this.connected = true;
+    if (
+      this.tournament &&
+      data?.clock &&
+      data.version >= this.version &&
+      (!this.tournament.clock || data.clock.now >= this.tournament.clock.now)
+    ) {
+      Object.assign(this.tournament, {
+        clock: data.clock,
+        received: performance.now(),
+        series: data.series,
+      });
+    }
     if (data && data.version > this.version) {
       this.version = data.version;
       this.ready = data.ready;
@@ -126,11 +148,22 @@ window.StandRoom = class StandRoom {
     if (this.id)
       this.timer = setTimeout(() => this.poll(), this.connected ? 950 : 2400);
   }
-  async poll() {
+  async poll(force = false) {
     const { id, key } = this;
     if (!id) return;
     try {
-      const data = await this.request(id, key, '', null, this.version);
+      const syncClock =
+        this.tournament &&
+        (force ||
+          !this.connected ||
+          performance.now() - this.tournament.received > 30000);
+      const data = await this.request(
+        id,
+        key,
+        '',
+        null,
+        syncClock ? undefined : this.version,
+      );
       if (this.id === id) this.apply(data);
     } catch (e) {
       if (this.id !== id) return;

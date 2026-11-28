@@ -3,6 +3,8 @@
   const { StandGame, MAX_MANA, STANDS, inTower } = window.StandChess;
   const $ = (id) => document.getElementById(id);
   const icons = {
+    trophy:
+      '<path d="M7 3h10v5a5 5 0 0 1-10 0zM7 5H3v2c0 3 2 4 5 4m9-6h4v2c0 3-2 4-5 4M12 13v5m-5 3h10l-1-3H8z"/>',
     home: '<path d="m3 10 9-7 9 7v11h-6v-7H9v7H3z"/>',
     bell: '<path d="M4 17c2-2 2-4 2-7a6 6 0 1 1 12 0c0 3 0 5 2 7H4zm6 3a2 2 0 0 0 4 0"/>',
     infinity:
@@ -144,6 +146,9 @@
     return 'assets/mobile/' + color + type.toLowerCase() + '.png';
   }
   const online = new window.StandRoom(applyRoomState, roomConnectionChanged);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && online.tournament) online.poll(true);
+  });
   const roomParam = () => new URL(location.href).searchParams.get('room');
   const invitedRoom = () =>
     /^[0-9a-f]{24}$/.test(roomParam() || '') ? roomParam() : null;
@@ -969,15 +974,26 @@
       clearTimeout(openingTimer);
       $('review-dialog').close();
       $('analysis-rows').replaceChildren();
-      const connecting = invitedRoom() || new URL(location.href).searchParams.has('duel');
+      const connecting =
+        invitedRoom() ||
+        ['duel', 'cup'].some((p) => new URL(location.href).searchParams.has(p));
       if (finished && (!connecting || online.id)) {
         const mate = finished.startsWith('Мат');
-        const winner = mate ? (game.turn() === 'w' ? 'b' : 'w') : '';
-        $('review-heading').textContent = mate
+        const timeout = online.tournament?.clock?.ended?.reason === 'timeout';
+        const winner = timeout
+          ? online.tournament.clock.ended.winner
+          : mate
+            ? game.turn() === 'w'
+              ? 'b'
+              : 'w'
+            : '';
+        $('review-heading').textContent = winner
           ? 'Победа ' + (winner === 'w' ? 'белых' : 'чёрных')
           : 'Ничья';
-        $('review-result').textContent = mate
-          ? 'Мат  ·  ' + (winner === 'w' ? '1 – 0' : '0 – 1')
+        $('review-result').textContent = winner
+          ? (timeout ? 'По времени' : 'Мат') +
+            '  ·  ' +
+            (winner === 'w' ? '1 – 0' : '0 – 1')
           : finished.replace(/^Ничья[ ·]*/, '') + '  ·  ½ – ½';
         $('report-players').replaceChildren();
         for (const c of ['w', 'b']) {
@@ -1230,7 +1246,10 @@
     if (review) turnLabel = 'Просмотр · ' + turnLabel;
     else if (online.id && !result) {
       if (!online.connected) turnLabel = 'Восстанавливаем связь…';
-      else if (!online.ready) turnLabel = 'Ожидаем друга';
+      else if (!online.ready)
+        turnLabel = online.tournament
+          ? 'Ожидаем соперника в лобби'
+          : 'Ожидаем друга';
       else turnLabel += online.side === color ? ' · ваш ход' : ' · ход друга';
     }
     $('turn').innerHTML =
@@ -1255,6 +1274,8 @@
     $('move-number').textContent = 'Ход ' + s.fen.split(' ')[5];
     if ($('phone-powers').open) renderPowers(game, result);
     $('leave-match').hidden = !online.id;
+    $('cup-clocks').hidden = !online.tournament;
+    $('cup-report-link').hidden = !online.tournament;
     document.querySelector('[data-command="leave-match"]').hidden = !online.id;
     document.querySelector('[data-command="open-report"]').hidden =
       $('match-review').hidden;
@@ -2137,7 +2158,12 @@
     const url = new URL(location.href);
     url.searchParams.delete('duel');
     url.searchParams.delete('room');
-    if (id) url.searchParams.set(online.duel ? 'duel' : 'room', id);
+    url.searchParams.delete('cup');
+    if (id)
+      url.searchParams.set(
+        online.tournament ? 'cup' : online.duel ? 'duel' : 'room',
+        id,
+      );
     url.hash = 'arena';
     return url;
   }
@@ -2186,7 +2212,8 @@
   function renderRoomDialog() {
     const active = Boolean(online.id),
       invite = invitedRoom();
-    $('invite-tools').hidden = !active || online.duel;
+    $('invite-tools').hidden =
+      !active || online.duel || Boolean(online.tournament);
     $('seat-stand-label').hidden = active || location.protocol === 'file:';
     $('room-enter').hidden = active || location.protocol === 'file:';
     $('online-public').hidden =
@@ -2201,7 +2228,7 @@
         ? 'Войти за чёрных'
         : 'Создать комнату';
     if (active) {
-      if (!online.duel) renderInvitation(online.id);
+      if (!online.duel && !online.tournament) renderInvitation(online.id);
       $('online-info').textContent = !online.connected
         ? 'Восстанавливаем связь с комнатой…'
         : online.ready
@@ -2249,6 +2276,10 @@
     window.GojoFX.stop();
     const previous = game.state;
     game = StandGame.restore(data.state);
+    if (data.clock?.ended?.reason === 'timeout')
+      game.result = () =>
+        'Время истекло. Победа ' +
+        (data.clock.ended.winner === 'w' ? 'белых' : 'чёрных');
     if (first) {
       motion.clear();
       review = null;
@@ -2349,14 +2380,38 @@
   $('room-enter').onclick = () => enterRoom(invitedRoom() ? 'join' : 'create');
   function leaveMatch() {
     if (enteringRoom) return;
+    const cup = online.tournament;
+    if (cup && !online.ready)
+      online.request(online.id, null, 'depart').catch(() => {});
     $('online').close();
     restoreLocalRoom();
     stopAudio();
+    if (cup) window.StandCup?.open();
   }
   $('leave-match').onclick = leaveMatch;
   $('room-leave').onclick = leaveMatch;
   $('room-board').addEventListener('click', () => window.StandHome.board());
   window.StandDuels = {
+    tournament: () => online.tournament,
+    async enterTournament(id, token, stand, request) {
+      if (online.id === id && online.tournament) {
+        window.StandHome.board();
+        return;
+      }
+      if (enteringRoom || (online.id && !online.tournament?.clock?.ended))
+        throw Error('Сначала выйдите из текущей онлайн-партии.');
+      enteringRoom = true;
+      try {
+        const data = await request('games/' + id + '/enter', { stand });
+        online.reset();
+        online.id = id;
+        online.tournament = { token, id };
+        online.apply(data, true);
+        online.schedule();
+      } finally {
+        enteringRoom = false;
+      }
+    },
     async enter(id, token) {
       if (online.id === id && online.duel) {
         window.StandHome.board();
@@ -2372,7 +2427,7 @@
       }
     },
     leave() {
-      if (online.duel) leaveMatch();
+      if (online.duel || online.tournament) leaveMatch();
     },
   };
   $('invite-copy').onclick = async () => {

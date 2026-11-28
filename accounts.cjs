@@ -93,4 +93,4 @@ async function mobileLogin(op, data) {
   setTimeout(() => codes.delete(code), 120000).unref();
   return { code };
 }
-module.exports = { duelSeat, mobileLogin };
+module.exports = { duelSeat, mobileLogin, identity };

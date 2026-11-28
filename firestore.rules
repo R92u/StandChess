@@ -3,6 +3,10 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signed() { return request.auth != null && request.auth.token.firebase.sign_in_provider == 'google.com'; }
     function uid() { return request.auth.uid; }
+    match /tournamentData/{id} {
+      allow get, create, update: if request.auth != null && uid() == 'standchess-tournament-service'
+        && request.auth.token.firebase.sign_in_provider == 'custom';
+    }
     function profile(id) { return /databases/$(database)/documents/profiles/$(id); }
     function handle(key) { return /databases/$(database)/documents/handles/$(key); }
     function relation(a, b) { return /databases/$(database)/documents/friends/$(a + '~' + b); }

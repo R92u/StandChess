@@ -405,6 +405,7 @@
     }
   }
   $('home-profile').onclick = () => open('profile');
+  window.StandProfile={load,open:()=>open('profile')};
   document
     .querySelectorAll('[data-social]')
     .forEach((b) => (b.onclick = () => open(b.dataset.social)));

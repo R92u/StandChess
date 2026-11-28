@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="style.css?v=2" />
     <link rel="stylesheet" href="assets/mobile/layout.css?v=5" />
     <link rel="stylesheet" href="assets/mobile/home.css" />
+    <link rel="stylesheet" href="assets/mobile/tournament.css" />
     <script defer src="vendor/chess.min.js"></script>
     <script defer src="variants.js?v=5"></script>
     <script defer src="engine.js?v=5"></script>
@@ -17,12 +18,13 @@
     <script defer src="effects.js?v=2"></script>
     <script defer src="piece-effects.js"></script>
     <script defer src="board-fx.js?v=2"></script>
-    <script defer src="online.js?v=2"></script>
+    <script defer src="online.js?v=3"></script>
     <script defer src="vendor/qrcodegen.js"></script>
     <script defer src="board-motion.js?v=2"></script>
     <script defer src="gojo-fx.js?v=4"></script>
-    <script defer src="home.js"></script>
-    <script defer src="ui.js?v=9"></script>
+    <script defer src="home.js?v=2"></script>
+    <script defer src="ui.js?v=10"></script>
+    <script defer src="tournament-ui.js"></script>
   </head>
   <body>
     <main id="home-screen" aria-label="Главная">
@@ -99,6 +101,16 @@
             </button>
           </div>
         </section>
+        <section class="home-section">
+          <button id="cup-open" class="cup-card">
+            <i data-icon="trophy" aria-hidden="true"></i>
+            <span>
+              <strong>Турнир</strong>
+              <small>Сетка на выбывание · BO3 / BO5</small>
+            </span>
+            <span class="cup-arrow" aria-hidden="true">→</span>
+          </button>
+        </section>
       </div>
       <footer class="home-dock">
         <div>
@@ -120,6 +132,20 @@
         </div>
       </footer>
     </main>
+    <dialog id="cup-panel" aria-labelledby="cup-heading">
+      <header class="dialog-heading">
+        <h2 id="cup-heading">Турнир</h2>
+        <button class="icon-button close" aria-label="Закрыть турнир">
+          <i data-icon="x"></i>
+        </button>
+      </header>
+      <p class="cup-format">
+        До двух побед в серии, до трёх в финале. При ничьей — переигровка со сменой
+        цвета.
+      </p>
+      <div id="cup-content"></div>
+      <p role="status" id="cup-message"></p>
+    </dialog>
     <dialog
       id="social-panel"
       class="phone-sheet social-panel"
@@ -164,6 +190,17 @@
               </button>
               <p id="target-hint" role="status" hidden></p>
               <p id="selected-note" aria-live="polite"></p>
+              <div id="cup-clocks" hidden aria-label="Турнирные часы">
+                <span data-side="w">
+                  Белые
+                  <b>3:00:00</b>
+                </span>
+                <button id="cup-board-link">Сетка</button>
+                <span data-side="b">
+                  Чёрные
+                  <b>3:00:00</b>
+                </span>
+              </div>
               <div class="board-rim">
                 <div class="board-stage">
                   <div id="board" role="group" aria-label="Игровое поле"></div>
@@ -653,6 +690,7 @@
         <button type="button" class="primary wide" id="walk-report">
           Смотреть ходы
         </button>
+        <button type="button" class="tool-button" hidden id="cup-report-link">Турнирная сетка</button>
         <button type="button" class="tool-button" hidden id="retry-report">
           Повторить разбор
         </button>

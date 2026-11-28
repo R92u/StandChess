@@ -5,13 +5,17 @@ const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 const { duelSeat, mobileLogin } = require('./accounts.cjs');
 const { StandGame, STANDS } = require('./engine');
+const { Tournament, account: tournamentAccount } = require('./tournament.cjs');
+const tournament = new Tournament();
 
+const {
+  seatVersion,
+  rememberDustPosition,
+  roomState,
+  playAction,
+} = require('./room-game.cjs');
 const rooms = new Map();
 const duelInstance = randomBytes(16).toString('hex');
-const isSecret = (event) => event?.kind === 'ability' && event.stand === 'dust';
-function seatVersion(room, side) {
-  return room.version - room.privateUpdates[side === 'w' ? 'b' : 'w'];
-}
 const ttl = 24 * 60 * 60 * 1000;
 const timer = setInterval(() => {
   for (const [id, room] of rooms)
@@ -36,63 +40,6 @@ async function readAction(req, limit = 1024) {
     if (body.length > limit) throw new Error('Слишком большой запрос');
   }
   return body ? JSON.parse(body) : {};
-}
-// Retain the board at each ply so either seat can review a hidden-information game.
-function rememberDustPosition(room) {
-  const game = room.game,
-    s = game.state;
-  if (!Object.values(s.stands).includes('dust')) return;
-  if (isSecret(s.events.at(-1))) return;
-  room.frames ??= [];
-  const publicIndex = s.events.filter((event) => !isSecret(event)).length;
-  room.frames[publicIndex] = {
-    eventCount: s.events.length,
-    position: s.position,
-    fen: s.fen,
-    mana: { ...s.mana },
-    freeze: s.freeze,
-    locked: { ...s.locked },
-    fallen: s.fallen,
-    lastMove: s.lastMove,
-    verdict: game.result(),
-  };
-}
-function roomState(room, side, index) {
-  const game = room.game,
-    state = game.snapshot();
-  if (room.frames) {
-    if (index !== undefined) {
-      const { eventCount, ...frame } = structuredClone(room.frames[index]);
-      Object.assign(state, frame);
-      state.events.length = eventCount;
-    } else {
-      state.verdict = game.result();
-      if (game.turn() === side)
-        state.legalMoves = game.moves().map(({ detonation, ...move }) => move);
-    }
-    // Position signatures and backup boards also contain the private target.
-    state.positions = state.positions.slice(0, 1);
-    for (const board of [state.position, state.lastMove?.previous])
-      if (board)
-        for (const unit of Object.values(board.units))
-          if (unit.color !== side) delete unit.dust;
-    const foe = side === 'w' ? 'b' : 'w';
-    if (state.stands[foe] === 'dust') {
-      delete state.mana[foe];
-      if (state.lastMove?.color === foe) delete state.lastMove.manaEarned;
-    }
-    if (state.lastMove)
-      state.lastMove.event = state.events
-        .slice(0, state.lastMove.event)
-        .filter((e) => !isSecret(e)).length;
-    state.events = state.events.filter((e) => !isSecret(e));
-  }
-  return {
-    side,
-    ready: Boolean(room.b),
-    version: seatVersion(room, side),
-    state,
-  };
 }
 async function roomApi(req, res, url, id, op) {
   const token = /^Bearer ([0-9a-f]{48})$/.exec(
@@ -169,23 +116,8 @@ async function roomApi(req, res, url, id, op) {
       (action.type !== 'merge' && room.game.turn() !== side)
     )
       return fail(res, 409, 'Позиция изменилась. Проверьте, чей сейчас ход.');
-    let ok = false;
-    if (action.type === 'ability')
-      ok = room.game.activate(side, action.target, action.choice);
-    if (action.type === 'merge') ok = room.game.merge?.(side);
-    if (
-      action.type === 'move' &&
-      typeof action.from === 'string' && /^(?:[a-h][1-8]|i[345])(?:~[1-9]\d?)?$/.test(action.from) &&
-      /^(?:[a-h][1-8]|i[345])$/.test(action.to) &&
-      (action.promotion === undefined ||
-        ['q', 'r', 'b', 'n'].includes(action.promotion))
-    ) {
-      ok = room.game.move(action.from, action.to, action.promotion);
-    }
+    const ok = playAction(room, side, action);
     if (!ok) return fail(res, 422, 'Действие недоступно в этой позиции.');
-    if (isSecret(room.game.state.events.at(-1))) room.privateUpdates[side]++;
-    rememberDustPosition(room);
-    room.version++;
   }
   if (!op && url.searchParams.has('at')) {
     const i = Number(url.searchParams.get('at'));
@@ -199,6 +131,7 @@ async function roomApi(req, res, url, id, op) {
 }
 
 const publicFiles = new Set([
+  'tournament-ui.js',
   'home.js',
   'social.js',
   'signin.js',
@@ -287,9 +220,16 @@ const server = http.createServer(async (req, res) => {
     );
     const login = /^\/api\/account\/(transfer|redeem)$/.exec(url.pathname);
     const instance = url.pathname === '/api/duels/instance';
-    if (route || duel || login || instance) {
+    const cup =
+      /^\/api\/tournament(?:\/(register|withdraw|start)|\/games\/(r[1-9]\d*m[1-9]\d*-[1-9]\d*)(?:\/(enter|action|depart))?)?$/.exec(
+        url.pathname,
+      );
+    if (route || duel || login || instance || cup) {
       res.setHeader('Vary', 'Origin');
-      if (req.headers.origin === 'https://r92u.github.io') {
+      if (
+        req.headers.origin === 'https://r92u.github.io' ||
+        (cup && req.headers.origin === 'https://standchess-r92u.onrender.com')
+      ) {
         res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
         if (req.method === 'OPTIONS') {
           res.setHeader('Access-Control-Allow-Methods', 'GET, POST');
@@ -300,6 +240,32 @@ const server = http.createServer(async (req, res) => {
           res.setHeader('Access-Control-Max-Age', '600');
           return reply(res, 204);
         }
+      }
+      if (cup) {
+        const op = cup[1] || cup[3] || (cup[2] ? 'poll' : 'view');
+        if (req.method !== (['view', 'poll'].includes(op) ? 'GET' : 'POST'))
+          return fail(res, 405, 'Метод не поддерживается.');
+        const bearer = /^Bearer (\S+)$/.exec(
+          req.headers.authorization || '',
+        )?.[1];
+        const user =
+          op === 'view' && !bearer ? null : await tournamentAccount(bearer);
+        let body = {};
+        if (req.method === 'POST')
+          try {
+            body = await readAction(req);
+            if (!body || typeof body !== 'object') throw Error();
+          } catch {
+            return fail(res, 400, 'Некорректное действие.');
+          }
+        const data = await tournament.handle(
+          op,
+          cup[2],
+          user,
+          body,
+          url.searchParams,
+        );
+        return data === null ? reply(res, 204) : reply(res, 200, data);
       }
       if (instance)
         return req.method === 'GET'
@@ -356,7 +322,8 @@ const server = http.createServer(async (req, res) => {
       return fail(res, 405, 'Метод не поддерживается.');
     return await serveFile(req, res, url.pathname);
   } catch (error) {
-    if (!res.headersSent && error.status) return fail(res,error.status,error.message);
+    if (!res.headersSent && error.status)
+      return fail(res, error.status, error.message);
     if (!res.headersSent) fail(res, 500, 'Ошибка сервера.');
     else res.destroy();
   }
