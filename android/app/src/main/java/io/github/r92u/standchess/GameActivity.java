@@ -1,6 +1,10 @@
 package io.github.r92u.standchess;
 
 import android.app.Activity;
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import android.provider.Settings;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.graphics.Color;
@@ -49,7 +53,7 @@ public final class GameActivity extends Activity {
         super.onCreate(saved);
         LinearLayout frame = new LinearLayout(this);
         frame.setOrientation(LinearLayout.VERTICAL);
-        frame.setBackgroundColor(Color.rgb(16, 29, 32));
+        frame.setBackgroundColor(Color.rgb(6, 22, 38));
         frame.setOnApplyWindowInsetsListener((view, insets) -> {
             view.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
                     insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
@@ -77,18 +81,48 @@ public final class GameActivity extends Activity {
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " StandChessAndroid/1.0");
+        settings.setUserAgentString(settings.getUserAgentString() + " StandChessAndroid/1.2");
         game.setWebChromeClient(new WebChromeClient());
         game.setWebViewClient(new GameClient());
         String start = saved == null ? null : saved.getString("url");
         if (start != null) start = gameUrl(Uri.parse(start));
         if (start == null) start = gameUrl(getIntent().getData());
         game.loadUrl(start == null ? SITE : start);
+        UpdateJob.channel(this);
+        if (UpdateJob.enabled(this) && !UpdateJob.prefs(this).getBoolean("asked", false)) askForAlerts();
+    }
+    private void askForAlerts() {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            UpdateJob.prefs(this).edit().putBoolean("asked", true).apply();
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 401);
+        }
+    }
+    @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(code, permissions, results);
+        if (code == 401) {
+            UpdateJob.schedule(this);
+            sendAlertState();
+        }
+    }
+    private void sendAlertState() {
+        if (game == null || game.getUrl() == null || gameUrl(Uri.parse(game.getUrl())) == null) return;
+        game.evaluateJavascript("document.dispatchEvent(new CustomEvent('standchess-alerts',{detail:{enabled:" +
+            UpdateJob.enabled(this) + ",allowed:" + UpdateJob.allowed(this) + "}}))", null);
     }
 
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if (UpdateJob.WEB_UPDATE.equals(intent.getAction()) && game.getUrl() != null) {
+            String current = gameUrl(Uri.parse(game.getUrl()));
+            if (current != null) {
+                bundled = false;
+                retry.setVisibility(View.GONE);
+                game.loadUrl(current);
+                return;
+            }
+        }
         String url = gameUrl(intent.getData());
         if (url != null && !url.equals(game.getUrl())) game.loadUrl(url);
     }
@@ -98,7 +132,12 @@ public final class GameActivity extends Activity {
         out.putString("url", game.getUrl());
     }
     @Override protected void onPause() { game.onPause(); super.onPause(); }
-    @Override protected void onResume() { super.onResume(); game.onResume(); }
+    @Override protected void onResume() {
+        super.onResume();
+        game.onResume();
+        UpdateJob.schedule(this);
+        sendAlertState();
+    }
     @Override protected void onDestroy() {
         ((LinearLayout) game.getParent()).removeView(game);
         game.destroy();
@@ -113,9 +152,24 @@ public final class GameActivity extends Activity {
     }
 
     private final class GameClient extends WebViewClient {
+        @Override public void onPageFinished(WebView view, String url) { sendAlertState(); }
         @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             if (!request.isForMainFrame()) return false;
             Uri uri = request.getUrl();
+            if ("standchess".equals(uri.getScheme()) && "updates".equals(uri.getHost())) {
+                if (!request.hasGesture() || view.getUrl() == null || gameUrl(Uri.parse(view.getUrl())) == null) return true;
+                if ("/system".equals(uri.getPath())) {
+                    Intent settings = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+                    settings.putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+                    startActivity(settings);
+                } else if ("/enable".equals(uri.getPath()) || "/disable".equals(uri.getPath())) {
+                    boolean enable = "/enable".equals(uri.getPath());
+                    UpdateJob.setEnabled(GameActivity.this, enable);
+                    if (enable) askForAlerts();
+                    sendAlertState();
+                }
+                return true;
+            }
             String local = gameUrl(uri);
             if (local != null) {
                 if (uri.toString().startsWith(SITE)) return false;

@@ -65,6 +65,9 @@ chess.js 0.10.3 — Jeff Hlywa и участники проекта. BSD-2-Claus
 https://github.com/jhlywa/chess.js/tree/v0.10.3
 Текст лицензии в vendor/chess-LICENSE.txt.
 
+Оформление мобильной доски
+Icy Sea и Neo — Chess.com. https://images.chesscomfiles.com/chess-themes/
+
 QR-коды
 Project Nayuki, QR Code generator library (MIT).
 https://www.nayuki.io/page/qr-code-generator-library

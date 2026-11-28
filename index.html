@@ -8,6 +8,7 @@
     <link rel="icon" href="assets/mark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="assets/fonts/fonts.css" />
     <link rel="stylesheet" href="style.css?v=2" />
+    <link rel="stylesheet" href="assets/mobile/layout.css?v=1" />
     <script defer src="vendor/chess.min.js"></script>
     <script defer src="variants.js"></script>
     <script defer src="engine.js?v=2"></script>
@@ -17,7 +18,7 @@
     <script defer src="board-fx.js"></script>
     <script defer src="online.js"></script>
     <script defer src="vendor/qrcodegen.js"></script>
-    <script defer src="ui.js?v=2"></script>
+    <script defer src="ui.js?v=3"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -53,11 +54,13 @@
         <div class="arena-layout">
           <section class="play-column" aria-labelledby="arena-title">
             <header class="arena-heading">
+              <button class="phone-only phone-icon" data-panel="phone-menu" aria-label="Главное меню" aria-haspopup="dialog"><i data-icon="menu"></i></button>
               <div>
                 <div class="series">JOJO’S BIZARRE ADVENTURE</div>
                 <h1 id="arena-title">Шахматная арена</h1>
               </div>
               <div class="turn-badge" id="turn" role="status"></div>
+              <button class="phone-only phone-icon" data-panel="preferences" aria-label="Настройки" aria-haspopup="dialog"><i data-icon="settings"></i></button>
             </header>
             <div class="board-shell">
               <div class="player-row" id="player-top"></div>
@@ -115,6 +118,7 @@
                 ‹
               </button>
               <span id="replay-status" aria-live="polite"></span>
+              <div id="phone-moves" class="phone-only" aria-label="Последние ходы"></div>
               <button
                 id="replay-next"
                 class="tool-button"
@@ -123,6 +127,12 @@
                 ›
               </button>
               <button id="replay-last" class="tool-button">К последнему</button>
+            </nav>
+            <nav class="phone-only phone-tools" aria-label="Действия партии">
+              <button data-panel="phone-menu"><i data-icon="options"></i>Меню</button>
+              <button data-panel="phone-history"><i data-icon="history"></i>Журнал</button>
+              <button data-panel="phone-powers"><i data-icon="spark"></i>Стенды</button>
+              <button id="phone-flip"><i data-icon="flip"></i>Повернуть</button>
             </nav>
             <section
               id="match-review"
@@ -309,6 +319,35 @@
         disablepictureinpicture
       ></video>
     </div>
+    <dialog class="phone-drawer" id="phone-menu" aria-labelledby="phone-menu-title">
+      <header class="dialog-heading"><h2 id="phone-menu-title">Главное меню</h2><button class="icon-button close" aria-label="Закрыть меню"><i data-icon="x"></i></button></header>
+      <div id="phone-navigation"></div>
+      <div class="drawer-group">
+        <button data-panel="phone-powers"><i data-icon="spark"></i>Способности стендов</button>
+        <button data-panel="phone-history"><i data-icon="history"></i>История партии</button>
+        <button data-command="flip"><i data-icon="flip"></i>Повернуть доску</button>
+        <button data-command="open-report" hidden><i data-icon="flag"></i>Разбор партии</button>
+        <button data-command="leave-match" hidden><i data-icon="x"></i>Выйти из онлайн-игры</button>
+        <button data-panel="preferences"><i data-icon="settings"></i>Настройки</button>
+      </div>
+    </dialog>
+    <dialog class="phone-sheet" id="phone-powers" aria-label="Способности стендов">
+      <button class="icon-button close sheet-close" aria-label="Свернуть способности"><i data-icon="x"></i></button>
+      <div id="phone-power-slot"></div>
+    </dialog>
+    <dialog class="phone-sheet" id="phone-history" aria-label="История партии">
+      <button class="icon-button close sheet-close" aria-label="Закрыть историю"><i data-icon="x"></i></button>
+      <div id="phone-history-slot"></div>
+      <div class="history-actions"><button data-command="replay-first" class="tool-button">В начало</button><button data-command="replay-last" class="tool-button">К последнему ходу</button></div>
+    </dialog>
+    <dialog id="preferences" aria-labelledby="preferences-heading">
+      <header class="dialog-heading"><h2 id="preferences-heading">Настройки</h2><button class="icon-button close" aria-label="Закрыть настройки"><i data-icon="x"></i></button></header>
+      <label class="preference-row">Звук игры<input type="checkbox" id="setting-sound"></label>
+      <div id="android-alerts" hidden>
+        <label class="preference-row">Уведомления об обновлениях<input type="checkbox" id="setting-updates"></label>
+        <a id="system-alerts" href="standchess://updates/system" hidden>Разрешить в настройках Android</a>
+      </div>
+    </dialog>
     <dialog id="online" aria-labelledby="online-title">
       <div class="dialog-heading">
         <h2 id="online-title"><i data-icon="players"></i>Игра онлайн</h2>

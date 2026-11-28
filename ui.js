@@ -3,6 +3,9 @@
   const { StandGame, MAX_MANA, STANDS, inTower } = window.StandChess;
   const $ = (id) => document.getElementById(id);
   const icons = {
+    menu: '<path d="M3 5h18M3 12h18M3 19h18"/>',
+    options: '<path d="M9 5h12M9 12h12M9 19h12"/><circle cx="3" cy="5" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="19" r="1"/>',
+    settings: '<path d="m9 3 1-2h4l1 2 2 1 2-.2 2 3.4-1.2 1.9v3l1.2 2-2 3.5-2-.1-2 1-1 2h-4l-1-2-2-1-2 .1-2-3.5 1.2-2v-3L3 7.2l2-3.4 2 .2z" transform="translate(0 1)" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="4" fill="#0b1c30" stroke="none"/>',
     zip: '<path d="M9 2v7m6-7v7M9 3h3m0 2h3M9 7h3m-2 7L5 21m9-7 5 7"/><path d="m9 9 3-2 3 2v3l-3 3-3-3z"/><path d="M12 10v2"/>',
     tower:
       '<path d="m12 2-2 4h4zM10.5 6 6 22m7.5-16L18 22M4 22h5m6 0h5M6 7h12l2 2h-4M6 7 4 9h4m-3 2h14l2 2h-5m-11-2-2 2h5m1.4-.8 5.9 4.8m-1.9-4.8L8.2 17m-.5 2.4 8.8-2.1M9 17l8 4"/>',
@@ -117,6 +120,11 @@
     suppressDragClick = false;
   let showTowerZone = true;
   const boardElement = $('board');
+  const phoneLayout = matchMedia('(max-width: 820px), (max-height: 560px) and (pointer: coarse)');
+  function pieceImage(color, type) {
+    return phoneLayout.matches ? 'assets/mobile/' + color + type.toLowerCase() + '.png' :
+      'assets/pieces/' + color + type.toUpperCase() + '.svg';
+  }
   const online = new window.StandRoom(applyRoomState, roomConnectionChanged);
   const roomParam = () => new URL(location.href).searchParams.get('room');
   const invitedRoom = () =>
@@ -229,6 +237,23 @@
     $('replay-status').textContent = review
       ? 'Просмотр · ' + index + ' / ' + end
       : 'Текущая позиция';
+    if (phoneLayout.matches) {
+      const strip = $('phone-moves'), events = visibleEvents(game);
+      strip.replaceChildren();
+      if (!index) strip.textContent = 'Начало партии';
+      else {
+        const first = index > 1 && events[index-1].color === 'b' && events[index-2].color === 'w' ? index-2 : index-1;
+        const current = displayed(), fen = current.state.fen.split(' ');
+        const number = Math.max(1, Number(fen[5]) - (events[index-1].color === 'b' && current.turn() === 'w' ? 1 : 0));
+        strip.append(node('span','strip-number',number + (events[first].color === 'b' ? '…' : '.')));
+        for (let i=first;i<index;i++) {
+          const e=events[i], b=node('button',i===index-1?'strip-active':'',e.san || e.text || 'Стенд');
+          b.type='button';
+          b.onclick=()=>seek(i+1);
+          strip.append(b);
+        }
+      }
+    }
   }
   const mayPlay = () =>
     !review &&
@@ -402,6 +427,10 @@
         const target = candidates.some((m) => m.to === square);
         cell.type = 'button';
         cell.dataset.square = square;
+        if (phoneLayout.matches && file !== 'i') {
+          cell.style.setProperty('--ice-x', (file.charCodeAt(0)-97)*100/7 + '%');
+          cell.style.setProperty('--ice-y', (8-Number(rank))*100/7 + '%');
+        }
         cell.className = 'sq';
         if (file === 'i') cell.classList.add('room-square');
         if (square === targetOrigin) cell.classList.add('selected');
@@ -498,11 +527,7 @@
             img.classList.add('piece', 'sticky-transparent');
             cell.title = transparencyLabel;
           }
-          img.src =
-            'assets/pieces/' +
-            piece.color +
-            (piece.walk || piece.type).toUpperCase() +
-            '.svg';
+          img.src = pieceImage(piece.color, piece.walk || piece.type);
           img.alt = '';
           img.draggable = false;
           cell.append(img);
@@ -739,6 +764,7 @@
   }
   $('open-report').onclick = showReport;
   async function showReportMove(index) {
+    $('phone-history').close();
     $('review-dialog').close();
     await seek(index);
     $('board').scrollIntoView({ block: 'center' });
@@ -1132,6 +1158,9 @@
       meter.querySelector('b').textContent = value + ' / ' + max;
     }
     $('leave-match').hidden = !online.id;
+    document.querySelector('[data-command="leave-match"]').hidden = !online.id;
+    document.querySelector('[data-command="open-report"]').hidden = $('match-review').hidden;
+    $('setting-sound').checked = sound;
     $('match-type').textContent = online.id
       ? 'Онлайн · вы играете за ' + (online.side === 'w' ? 'белых' : 'чёрных')
       : 'Локальная партия';
@@ -1574,7 +1603,54 @@
     if (!sound) stopAudio();
     window.StandEffects.setSound(sound);
     renderSound();
+    $('setting-sound').checked = sound;
   };
+  $('setting-sound').onchange = () => $('sound-toggle').click();
+  const nativeAlerts = /StandChessAndroid\/(\d+)\.(\d+)/.exec(navigator.userAgent);
+  $('android-alerts').hidden = !nativeAlerts || (+nativeAlerts[1] === 1 && +nativeAlerts[2] < 2);
+  document.addEventListener('standchess-alerts', ({detail}) => {
+    $('setting-updates').checked = detail.enabled;
+    $('system-alerts').hidden = !detail.enabled || detail.allowed;
+  });
+  $('setting-updates').onchange = () => {
+    location.href = 'standchess://updates/' + ($('setting-updates').checked ? 'enable' : 'disable');
+  };
+  const phoneSlots = [
+    ['.rail', 'phone-navigation'], ['.stand-panel', 'phone-power-slot'],
+    ['.journal', 'phone-history-slot'], ['#match-review', 'phone-history-slot'],
+  ].map(([selector, slot]) => {
+    const el = document.querySelector(selector), origin = document.createElement('template');
+    el.before(origin);
+    return {el, origin, slot:$(slot)};
+  });
+  function arrangePhone() {
+    for (const id of ['phone-menu','phone-powers','phone-history','preferences']) $(id).close();
+    for (const {el, origin, slot} of phoneSlots) {
+      if (phoneLayout.matches) slot.append(el);
+      else origin.after(el);
+    }
+    document.querySelector('meta[name="theme-color"]').content = phoneLayout.matches ? '#061626' : '#101d20';
+  }
+  arrangePhone();
+  phoneLayout.addEventListener('change', () => { arrangePhone(); render(); });
+  for (const button of document.querySelectorAll('[data-panel]')) button.onclick = () => {
+    button.closest('dialog')?.close();
+    $(button.dataset.panel).showModal();
+  };
+  for (const button of document.querySelectorAll('[data-command]')) button.onclick = () => {
+    button.closest('dialog')?.close();
+    $(button.dataset.command).click();
+  };
+  $('phone-flip').onclick = () => $('flip').click();
+  $('phone-menu').addEventListener('click', e => {
+    if (e.target.closest('#new-game,#online-open,.rail a')) $('phone-menu').close();
+  }, true);
+  $('phone-powers').addEventListener('click', e => {
+    if (e.target.closest('#choose-stands,.power-button,button[id^="merge-"]')) $('phone-powers').close();
+  }, true);
+  $('phone-history').addEventListener('click', e => {
+    if (e.target.closest('#open-report')) $('phone-history').close();
+  }, true);
   function roomURL(id) {
     const url = new URL(location.href);
     if (id) url.searchParams.set('room', id);
