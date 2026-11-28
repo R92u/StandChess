@@ -231,7 +231,7 @@ const server = http.createServer(async (req, res) => {
     const login = /^\/api\/account\/(transfer|redeem)$/.exec(url.pathname);
     const instance = url.pathname === '/api/duels/instance';
     const cup =
-      /^\/api\/tournament(?:\/(register|withdraw|start)|\/games\/(r[1-9]\d*m[1-9]\d*-[1-9]\d*)(?:\/(enter|action|depart|leave))?)?$/.exec(
+      /^\/api\/tournament(?:\/(register|withdraw|start)|\/games\/(r[1-9]\d*m[1-9]\d*-[1-9]\d*)(?:\/(enter|action|depart|leave|ban|pick|watch))?)?$/.exec(
         url.pathname,
       );
     if (route || duel || login || instance || cup) {
@@ -253,13 +253,13 @@ const server = http.createServer(async (req, res) => {
       }
       if (cup) {
         const op = cup[1] || cup[3] || (cup[2] ? 'poll' : 'view');
-        if (req.method !== (['view', 'poll'].includes(op) ? 'GET' : 'POST'))
+        if (req.method !== (['view', 'poll', 'watch'].includes(op) ? 'GET' : 'POST'))
           return fail(res, 405, 'Метод не поддерживается.');
         const bearer = /^Bearer (\S+)$/.exec(
           req.headers.authorization || '',
         )?.[1];
         const user =
-          op === 'view' && !bearer ? null : await tournamentAccount(bearer);
+          (op === 'watch' || (op === 'view' && !bearer)) ? null : await tournamentAccount(bearer);
         let body = {};
         if (req.method === 'POST')
           try {

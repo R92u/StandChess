@@ -1,5 +1,5 @@
 'use strict';
-const { randomInt, createHash } = require('node:crypto');
+const { createHash } = require('node:crypto');
 const { StandGame, STANDS } = require('./engine');
 const {
   roomState,
@@ -18,52 +18,79 @@ const empty = () => ({
   rounds: [],
   champion: null,
 });
-function advance(t) {
-  for (let r = 0; r < t.rounds.length; r++) {
-    for (const [i, m] of t.rounds[r].entries()) {
-      if (r)
-        m.players = [
-          t.rounds[r - 1][i * 2].winner,
-          t.rounds[r - 1][i * 2 + 1].winner,
-        ];
-      else if (!m.players[1] || !m.players[0])
-        m.winner = m.players.find(Boolean);
-    }
-  }
-  t.champion = t.rounds.at(-1)[0].winner;
-  if (t.champion) t.phase = 'finished';
+const {
+  register,
+  registration,
+  activeMatch,
+  start,
+  advance,
+} = require('./tournament-bracket.cjs');
+function summary(t, user) {
+  return {
+    tournament: t,
+    registration: t.phase === 'registration' ? registration(t) : null,
+    active: activeMatch(t)?.id || null,
+    me: user ? { id: user.id, organizer: user.organizer } : null,
+  };
 }
-function start(t) {
-  if (t.phase !== 'registration') throw fail(409, 'Турнир уже начался.');
-  if (t.players.length < 2)
-    throw fail(409, 'Для старта нужны минимум два участника.');
-  const ids = t.players.map((p) => p.id);
-  for (let i = ids.length - 1; i > 0; i--) {
-    const j = randomInt(i + 1);
-    [ids[i], ids[j]] = [ids[j], ids[i]];
+function draftStep(m, g) {
+  if (g.ended) return { step: 'ended' };
+  if (g.initial) return { step: 'play' };
+  for (const side of ['w', 'b']) {
+    if (!m.bans?.[m.players.indexOf(g.seats[side])])
+      return { step: 'ban', side };
   }
-  let seeds = [0, 1];
-  while (seeds.length < ids.length) {
-    const n = seeds.length * 2;
-    seeds = seeds.flatMap((i) => [i, n - 1 - i]);
+  for (const side of ['w', 'b'])
+    if (!g.stands[side]) return { step: 'pick', side };
+  return { step: 'play', side: 'w' };
+}
+const spectatorBoards = new WeakMap();
+function spectatorView(g) {
+  if (!g.initial) return null;
+  if (spectatorBoards.has(g)) return spectatorBoards.get(g);
+  const { game } = board(g),
+    s = game.state,
+    pieces = [];
+  function add(square, unit) {
+    if (unit)
+      pieces.push({
+        square: square.slice(0, 2),
+        color: unit.color,
+        type: unit.walk || unit.type,
+        transparent: !!unit.transparent,
+        infinity: square.length > 2,
+      });
   }
-  for (let count = seeds.length / 2, r = 0; count >= 1; count /= 2, r++) {
-    t.rounds.push(
-      Array.from({ length: count }, (_, i) => ({
-        id: 'r' + (r + 1) + 'm' + (i + 1),
-        players: r
-          ? [null, null]
-          : [ids[seeds[i * 2]] || null, ids[seeds[i * 2 + 1]] || null],
-        wins: [0, 0],
-        target: count === 1 ? 3 : 2,
-        number: 1,
-        winner: null,
-        deadline: null,
-      })),
-    );
+  if (s.position) {
+    for (const [square, unit] of Object.entries(s.position.units))
+      add(square, unit);
+  } else {
+    for (const file of 'abcdefgh')
+      for (let rank = 1; rank <= 8; rank++) {
+        const square = file + rank;
+        add(square, game.chess.get(square));
+      }
   }
-  t.phase = 'playing';
-  advance(t);
+  const event = s.events.findLast(
+    (e) => !(e.kind === 'ability' && e.stand === 'dust'),
+  );
+  const view = {
+    pieces,
+    tower: s.tower,
+    turn: game.turn(),
+    stands: s.stands,
+    locked: s.locked,
+    mana: Object.fromEntries(
+      ['w', 'b']
+        .filter((c) => s.stands[c] !== 'dust')
+        .map((c) => [c, s.mana[c]]),
+    ),
+    power: event?.kind === 'ability' ? event.stand : null,
+    last: s.lastMove ? [s.lastMove.from, s.lastMove.to] : [],
+    verdict: game.result(),
+  };
+  spectatorBoards.set(g, view);
+  return view;
 }
 function conclude(t, m, g, reason, winner) {
   g.ended = { reason, winner };
@@ -92,6 +119,7 @@ function seedGame(m) {
   const [w, b] = m.number % 2 ? m.players : [...m.players].reverse();
   return {
     seats: { w, b },
+    joined: {},
     stands: {},
     left: { w: THREE_HOURS, b: THREE_HOURS },
     since: null,
@@ -211,11 +239,7 @@ class Tournament {
           continue;
         }
         if (!id) {
-          if (op === 'view')
-            return {
-              tournament: t,
-              me: user ? { id: user.id, organizer: user.organizer } : null,
-            };
+          if (op === 'view') return summary(t, user);
           if (!user || (op !== 'start' && !user.nick))
             throw fail(403, 'Для участия нужен игровой ник.');
           if (t.phase !== 'registration')
@@ -225,77 +249,129 @@ class Tournament {
               throw fail(403, 'Начать турнир может только организатор.');
             start(t);
           } else if (op === 'register') {
-            if (!t.players.some((p) => p.id === user.id))
-              t.players.push({ id: user.id, nick: user.nick });
-            else
-              return {
-                tournament: t,
-                me: { id: user.id, organizer: user.organizer },
-              };
+            register(t, user, body.slot);
           } else if (op === 'withdraw')
             t.players = t.players.filter((p) => p.id !== user.id);
           else throw fail(404, 'Нет такого действия.');
-          if (await this.store.save([[meta, t]]))
-            return {
-              tournament: t,
-              me: { id: user.id, organizer: user.organizer },
-            };
+          if (await this.store.save([[meta, t]])) return summary(t, user);
           continue;
         }
         const m = t.rounds
           .flat()
           .find((match) => match.id === id.split('-')[0]);
-        if (!m || !m.players.every(Boolean) || !m.players.includes(user?.id))
+        if (!m || !m.players.every(Boolean))
+          throw fail(404, 'Эта пара ещё не определена.');
+        if (op !== 'watch' && !m.players.includes(user?.id))
           throw fail(403, 'В это лобби могут войти только участники пары.');
         const record = await this.store.read(id);
-        if (
-          !record.value &&
-          (m.winner || id !== m.id + '-' + m.number || op !== 'enter')
-        )
+        const current =
+          activeMatch(t)?.id === m.id && id === m.id + '-' + m.number;
+        if (!current && !record.value?.ended && !record.value?.initial)
+          throw fail(409, 'Сейчас очередь другой пары.');
+        if (!record.value && !['watch', 'enter'].includes(op))
           throw fail(404, 'Эта партия ещё не открыта.');
         let g = record.value || seedGame(m);
-        const side = g.seats.w === user.id ? 'w' : 'b';
+        const side = g.seats.w === user?.id ? 'w' : 'b';
+        const names = Object.fromEntries(
+          ['w', 'b'].map((c) => [
+            c,
+            t.players.find((p) => p.id === g.seats[c])?.nick,
+          ]),
+        );
+        if (op === 'watch')
+          return {
+            board: spectatorView(g),
+            names,
+            clock: clockView(g, now),
+            bans: m.bans || [],
+            number: Number(id.split('-')[1]),
+            score: m.wins,
+            target: m.target,
+          };
+        const key = id + ':' + side;
+        let changed = false;
         if (op === 'depart') {
-          this.presence.delete(id + ':' + side);
+          this.presence.delete(key);
+          if (!g.initial && !g.ended && g.since === null && g.joined?.[side]) {
+            g = structuredClone(g);
+            delete g.joined[side];
+            if (!(await this.store.save([[record, g]]))) continue;
+          }
           return null;
         }
-        let changed = false;
         if (op === 'leave') {
           if (g.ended) return null;
-          if (!g.stands[side]) throw fail(403, 'Сначала войдите в лобби.');
+          if (!g.joined?.[side] && !g.stands[side])
+            throw fail(403, 'Сначала войдите в лобби.');
           g = { ...g, left: clockView(g, now).left };
           conclude(t, m, g, 'resign', other(side));
-          if (!(await this.store.save([[record, g], [meta, t]]))) continue;
+          if (
+            !(await this.store.save([
+              [record, g],
+              [meta, t],
+            ]))
+          )
+            continue;
           this.presence.delete(id + ':w');
           this.presence.delete(id + ':b');
           return null;
         }
-        if (!g.initial && !g.ended && (op === 'enter' || op === 'poll')) {
-          if (op === 'enter' && !Object.hasOwn(STANDS, body.stand))
-            throw fail(400, 'Выберите стенд.');
-          if (!g.stands[side] && op !== 'enter')
-            throw fail(403, 'Сначала войдите в лобби.');
-          const key = id + ':' + side;
-          this.presence.set(key, now);
-          if (op === 'enter' && g.stands[side] !== body.stand) {
-            g = structuredClone(g);
-            g.stands[side] = body.stand;
+        if (
+          !g.initial &&
+          !g.ended &&
+          ['enter', 'poll', 'ban', 'pick'].includes(op)
+        ) {
+          g = structuredClone(g);
+          if (!g.joined) {
+            g.joined = Object.fromEntries(
+              Object.keys(g.stands).map((c) => [c, true]),
+            );
+            g.stands = {};
+          }
+          m.bans ||= [null, null];
+          if (!g.joined[side]) {
+            if (op !== 'enter') throw fail(403, 'Сначала войдите в лобби.');
+            g.joined[side] = true;
             changed = true;
           }
+          this.presence.set(key, now);
           if (
-            g.stands[other(side)] &&
+            g.since === null &&
+            g.joined[other(side)] &&
             now - (this.presence.get(id + ':' + other(side)) ?? -Infinity) <
               15000
           ) {
-            if (!changed) g = structuredClone(g);
-            g.initial = new StandGame(undefined, 0, g.stands).snapshot();
+            g.turn = draftStep(m, g).side;
             g.since = now;
-            m.deadline = now + THREE_HOURS;
+            m.deadline = now + g.left[g.turn];
             changed = true;
-            this.presence.delete(id + ':' + other(side));
-            this.presence.delete(key);
           }
-        }
+          if (op === 'ban' || op === 'pick') {
+            const draft = draftStep(m, g);
+            if (g.since === null || draft.step !== op || draft.side !== side)
+              throw fail(409, 'Дождитесь своей очереди.');
+            if (
+              typeof body.stand !== 'string' ||
+              !Object.hasOwn(STANDS, body.stand) ||
+              m.bans.includes(body.stand)
+            )
+              throw fail(422, 'Этот стенд недоступен в серии.');
+            g.left = clockView(g, now).left;
+            if (op === 'ban') m.bans[m.players.indexOf(user.id)] = body.stand;
+            else g.stands[side] = body.stand;
+            const next = draftStep(m, g);
+            g.turn = next.side;
+            g.since = now;
+            m.deadline = now + g.left[g.turn];
+            if (next.step === 'play') {
+              g.initial = new StandGame(undefined, 0, g.stands).snapshot();
+              this.presence.delete(id + ':w');
+              this.presence.delete(id + ':b');
+            }
+            changed = true;
+          }
+        } else if (op === 'ban' || op === 'pick')
+          throw fail(409, 'Выбор завершён.');
         if (op === 'action') {
           if (!g.initial || g.ended) throw fail(409, 'Партия сейчас не идёт.');
           const previous = board(g);
@@ -364,6 +440,13 @@ class Tournament {
           return null;
         return {
           ...roomState(room, side, at),
+          names,
+          lobby: {
+            ...draftStep(m, g),
+            joined: g.joined || {},
+            bans: m.bans || [],
+            picks: g.stands,
+          },
           clock,
           series: {
             id: m.id,

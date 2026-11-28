@@ -41,9 +41,33 @@ async function enter(cup, m) {
     b = user(seats[1]);
   const first = await cup.handle('enter', id, w, { stand: 'crimson' });
   assert.equal(first.ready, false);
-  const state = await cup.handle('enter', id, b, { stand: 'world' });
+  const second = await cup.handle('enter', id, b);
+  const state = await choose(cup, id, w, b, second);
   assert.equal(state.ready, true);
   return { id, w, b, state };
+}
+async function choose(
+  cup,
+  id,
+  w,
+  b,
+  state,
+  white = 'crimson',
+  black = 'world',
+) {
+  while (!state.ready) {
+    const { step, side } = state.lobby;
+    const stand =
+      step === 'ban'
+        ? side === 'w'
+          ? 'gold'
+          : 'heaven'
+        : side === 'w'
+          ? white
+          : black;
+    state = await cup.handle(step, id, side === 'w' ? w : b, { stand });
+  }
+  return state;
 }
 test('only the organizer seeds a public bracket and byes advance exactly once', async () => {
   const { cup } = await setup(5);
@@ -86,6 +110,7 @@ test('clocks start on two live seats, survive restart and charge only the actual
   assert.equal(data.clock.running, null);
   data = await cup.handle('poll', id, w);
   assert.deepEqual(data.clock.left, { w: THREE_HOURS, b: THREE_HOURS });
+  data = await choose(cup, id, w, b, data);
   tick(900);
   data = await cup.handle('action', id, w, {
     type: 'move',
@@ -212,6 +237,15 @@ test('The World keeps the same tournament clock running through the first extra 
     b = user(m.players[1]);
   await cup.handle('enter', id, w, { stand: 'world' });
   await cup.handle('enter', id, b, { stand: 'crimson' });
+  await choose(
+    cup,
+    id,
+    w,
+    b,
+    await cup.handle('poll', id, w),
+    'world',
+    'crimson',
+  );
   const record = await db.read(id);
   const seeded = structuredClone(record.value);
   seeded.initial.mana.w = 100;
@@ -238,12 +272,16 @@ test('leaving ends just this game and repeated exits award one point', async () 
   const { cup } = await setup(2);
   await cup.handle('start', null, player(0));
   const match = (await view(cup)).rounds[0][0];
-  const white = user(match.players[0]), black = user(match.players[1]);
+  const white = user(match.players[0]),
+    black = user(match.players[1]);
   const id = match.id + '-1';
   await cup.handle('enter', id, white, { stand: 'world' });
   await assert.rejects(cup.handle('leave', id, player(3)), { status: 403 });
   await cup.handle('enter', id, black, { stand: 'crimson' });
-  await Promise.all([cup.handle('leave', id, white), cup.handle('leave', id, white)]);
+  await Promise.all([
+    cup.handle('leave', id, white),
+    cup.handle('leave', id, white),
+  ]);
   const closed = await cup.handle('poll', id, black);
   assert.deepEqual(closed.clock.ended, { reason: 'resign', winner: 'b' });
   assert.equal(closed.clock.running, null);
@@ -255,4 +293,119 @@ test('leaving ends just this game and repeated exits award one point', async () 
   assert.equal(waiting.clock.running, null);
   assert.equal(waiting.clock.ended.reason, 'resign');
   assert.deepEqual(waiting.series.score, [1, 1]);
+});
+
+test('slots keep their position on expansion, collisions are atomic and only the first unfinished pair opens', async () => {
+  const { cup } = await setup(0);
+  await cup.handle('register', null, player(0), { slot: 7 });
+  const claims = await Promise.allSettled(
+    [1, 2].map((i) => cup.handle('register', null, player(i), { slot: 0 })),
+  );
+  assert.equal(claims.filter((c) => c.status === 'fulfilled').length, 1);
+  for (let i = 1; i < 9; i++) await cup.handle('register', null, player(i));
+  const preview = await cup.handle('view', null, null);
+  assert.equal(preview.registration.seeds.length, 16);
+  assert.equal(preview.tournament.players.find((p) => p.id === 'p0').slot, 7);
+  await cup.handle('start', null, player(0));
+  const { tournament: t, active } = await cup.handle('view', null, null);
+  const [first, next] = t.rounds
+    .flat()
+    .filter((m) => m.players.every(Boolean) && !m.winner);
+  assert.equal(first.id, active);
+  await assert.rejects(
+    cup.handle('enter', next.id + '-1', user(next.players[0])),
+    { status: 409 },
+  );
+  for (let n = 1; n <= 2; n++) {
+    const id = first.id + '-' + n;
+    await cup.handle('enter', id, user(first.players[0]));
+    await cup.handle('leave', id, user(first.players[0]));
+  }
+  assert.equal((await cup.handle('view', null, null)).active, next.id);
+});
+test('draft clock follows the actor, bans survive color swaps and spectators cannot influence the clock', async () => {
+  const { cup, tick } = await setup(2);
+  await cup.handle('start', null, player(0));
+  const m = (await view(cup)).rounds[0][0],
+    id = m.id + '-1',
+    w = user(m.players[0]),
+    b = user(m.players[1]);
+  await cup.handle('enter', id, w);
+  tick(1000);
+  assert.equal((await cup.handle('watch', id, null)).clock.running, null);
+  await cup.handle('enter', id, b);
+  tick(3000);
+  await assert.rejects(cup.handle('pick', id, w, { stand: 'dust' }), {
+    status: 409,
+  });
+  let data = await cup.handle('ban', id, w, { stand: 'gold' });
+  assert.equal(data.clock.running, 'b');
+  assert.equal(data.clock.left.w, THREE_HOURS - 3000);
+  tick(1000);
+  await cup.handle('ban', id, b, { stand: 'heaven' });
+  await assert.rejects(cup.handle('pick', id, w, { stand: 'gold' }), {
+    status: 422,
+  });
+  await cup.handle('pick', id, w, { stand: 'dust' });
+  data = await cup.handle('pick', id, b, { stand: 'world' });
+  assert.equal(data.clock.running, 'w');
+  assert.equal(data.clock.left.b, THREE_HOURS - 1000);
+  const seen = await cup.handle('watch', id, null);
+  assert.equal(seen.board.pieces.length, 32);
+  assert.equal(seen.state, undefined);
+  await assert.rejects(cup.handle('action', id, null, { type: 'move' }), {
+    status: 403,
+  });
+  await cup.handle('action', id, w, {
+    type: 'move',
+    from: 'e2',
+    to: 'e4',
+    version: data.version,
+  });
+  assert.ok(
+    (await cup.handle('watch', id, null)).board.pieces.some(
+      (p) => p.square === 'e4',
+    ),
+  );
+  await cup.handle('leave', id, w);
+  await cup.handle('enter', m.id + '-2', w);
+  const next = await cup.handle('enter', m.id + '-2', b);
+  assert.equal(next.lobby.step, 'pick');
+  assert.deepEqual(next.lobby.bans, ['gold', 'heaven']);
+});
+
+test('a public broadcast hides secret arming and a new series has its own two bans', async () => {
+  const { cup, db } = await setup(4);
+  await cup.handle('start', null, player(0));
+  const m = (await view(cup)).rounds[0][0],
+    id = m.id + '-1',
+    w = user(m.players[0]),
+    b = user(m.players[1]);
+  await cup.handle('enter', id, w);
+  const opening = await cup.handle('enter', id, b);
+  await choose(cup, id, w, b, opening, 'dust', 'world');
+  const record = await db.read(id),
+    seeded = structuredClone(record.value);
+  seeded.initial.mana.w = 100;
+  await db.save([[record, seeded]]);
+  let state = await cup.handle('poll', id, w);
+  const before = await cup.handle('watch', id, null);
+  await cup.handle('action', id, w, {
+    type: 'ability',
+    target: 'e2',
+    version: state.version,
+  });
+  assert.deepEqual(await cup.handle('watch', id, null), before);
+  for (let n = 1; n <= 2; n++) {
+    const gid = m.id + '-' + n;
+    if (n === 2) await cup.handle('enter', gid, w);
+    await cup.handle('leave', gid, w);
+  }
+  const next = (await view(cup)).rounds[0][1];
+  const a = user(next.players[0]),
+    c = user(next.players[1]);
+  await cup.handle('enter', next.id + '-1', a);
+  state = await cup.handle('enter', next.id + '-1', c);
+  assert.deepEqual(state.lobby.bans, [null, null]);
+  assert.equal(state.lobby.step, 'ban');
 });

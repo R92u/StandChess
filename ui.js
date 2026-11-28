@@ -1780,8 +1780,8 @@
       'translate3d(' +
       (x - size / 2) +
       'px,' +
-      (y - size * 1.26) +
-      'px,0) scale(1.7)';
+      (y - size * 1.07) +
+      'px,0) scale(1.35)';
     const col = Math.floor(((x - g.grid.left) * g.cols) / g.grid.width);
     const row = Math.floor(((y - g.grid.top) * 8) / g.grid.height);
     const tile =
@@ -2422,7 +2422,7 @@
   window.StandDuels = {
     tournament: () => online.tournament,
     active: () => online.id,
-    async enterTournament(id, token, stand, request) {
+    async enterTournament(id, token, data) {
       if (online.id === id && online.tournament) {
         window.StandHome.board();
         return;
@@ -2431,7 +2431,6 @@
         throw Error('Сначала выйдите из текущей онлайн-партии.');
       enteringRoom = true;
       try {
-        const data = await request('games/' + id + '/enter', { stand });
         if (data.clock?.ended?.reason === 'resign')
           throw Error('Игрок вышел. Эта турнирная партия завершена.');
         online.reset();

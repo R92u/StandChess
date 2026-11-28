@@ -70,97 +70,6 @@
   gap: 12px;
   min-width: 0;
 }
-#cup-content ul {
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0;
-}
-#cup-content li,
-.cup-pair {
-  border: 1px solid #6685a44d;
-  border-radius: 8px;
-  background: #20394d;
-  padding: 8px 12px;
-}
-.cup-rounds {
-  display: flex;
-  gap: 14px;
-  overflow: auto;
-  align-items: stretch;
-  padding-bottom: 12px;
-  min-width: 0;
-}
-.cup-round {
-  flex: 1 0 180px;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.cup-round h3 {
-  font-size: 0.93rem;
-  color: #c2d7e6;
-}
-.cup-pair {
-  display: grid;
-  width: 100%;
-  gap: 4px;
-  font-size: 0.92rem;
-}
-.cup-lanes {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-}
-.cup-slot {
-  position: relative;
-  display: flex;
-  align-items: center;
-  flex: 1;
-  padding: 4px 0;
-}
-.cup-round:not(:last-child) .cup-slot::after {
-  content: '';
-  position: absolute;
-  right: -7px;
-  width: 7px;
-  height: 50%;
-  border-right: 1px solid #7497aa;
-  box-sizing: border-box;
-}
-.cup-round:not(:last-child) .cup-slot:nth-child(odd)::after {
-  top: 50%;
-  border-top: 1px solid #7497aa;
-}
-.cup-round:not(:last-child) .cup-slot:nth-child(even)::after {
-  bottom: 50%;
-  border-bottom: 1px solid #7497aa;
-}
-.cup-round + .cup-round .cup-slot::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: -7px;
-  width: 7px;
-  border-top: 1px solid #7497aa;
-}
-.cup-pair > span {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  overflow-wrap: anywhere;
-}
-.cup-pair .won {
-  color: #b3e584;
-  font-weight: 750;
-}
-.cup-pair small {
-  color: #becfdc;
-  font-size: 0.76rem;
-}
 .cup-lobby {
   display: grid;
   gap: 10px;
@@ -223,4 +132,223 @@
 #cup-board-link {
   font-size: 0.76rem;
   padding: 4px 10px;
+}
+
+.cup-rounds {
+  --connector: #506373;
+  display: flex;
+  align-items: stretch;
+  gap: 34px;
+  overflow: auto;
+  padding: 6px 3px 14px;
+  scrollbar-color: #517185 #162b3b;
+}
+.cup-round {
+  flex: 1 0 210px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.cup-round h3 {
+  padding-bottom: 9px;
+  border-bottom: 2px solid #40515e;
+  text-align: center;
+  font-size: 0.86rem;
+  color: #bbcfdb;
+  text-transform: uppercase;
+}
+.cup-lanes {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.cup-slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  padding: 14px 0;
+}
+.cup-round:not(:last-child) .cup-slot::after {
+  content: '';
+  position: absolute;
+  left: 100%;
+  width: 17px;
+  height: 50%;
+  border-right: 2px solid var(--connector);
+}
+.cup-round:not(:last-child) .cup-slot:nth-child(odd)::after {
+  top: 50%;
+  border-top: 2px solid var(--connector);
+  border-radius: 0 5px 0 0;
+}
+.cup-round:not(:last-child) .cup-slot:nth-child(even)::after {
+  bottom: 50%;
+  border-bottom: 2px solid var(--connector);
+  border-radius: 0 0 5px 0;
+}
+.cup-round + .cup-round .cup-slot::before {
+  content: '';
+  position: absolute;
+  right: 100%;
+  width: 17px;
+  border-top: 2px solid var(--connector);
+}
+.cup-pair {
+  width: 100%;
+  display: grid;
+  gap: 5px;
+}
+#cup-panel .cup-seat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 5px 9px;
+  background: #192b35;
+  color: #8ba1af;
+  border: 1px solid #40545f;
+  border-radius: 5px;
+  font-size: 0.87rem;
+  text-align: left;
+}
+.cup-seat small {
+  min-width: 22px;
+  color: #a5c3d1;
+}
+.cup-seat span {
+  overflow-wrap: anywhere;
+}
+.cup-seat b {
+  margin-left: auto;
+}
+#cup-panel .cup-seat.occupied {
+  background: #234852;
+  color: white;
+}
+#cup-panel .cup-seat.available {
+  border-style: dashed;
+  color: #d2e5ec;
+}
+#cup-panel .cup-seat.available:hover,
+#cup-panel .cup-seat.mine {
+  border-color: #a7d994;
+}
+#cup-panel .cup-seat.won {
+  color: #caefa7;
+}
+.cup-game-actions,
+.cup-live-clocks {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  justify-content: space-between;
+}
+.cup-game-actions small {
+  color: #c0d4df;
+}
+#cup-panel .cup-game-actions button {
+  min-height: 35px;
+  padding: 5px 8px;
+}
+#cup-panel .cup-eye {
+  width: 36px;
+  display: grid;
+  place-items: center;
+}
+.cup-eye i {
+  width: 19px;
+  height: 13px;
+  border-radius: 80% 16%;
+  border: 2px solid #d4ecf7;
+  transform: rotate(32deg);
+  display: grid;
+  place-items: center;
+}
+.cup-eye i::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  background: #d4ecf7;
+  border-radius: 50%;
+}
+.cup-draft-label {
+  display: grid;
+  gap: 6px;
+}
+.cup-live-clocks > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.cup-live-clocks > div:last-child {
+  text-align: right;
+}
+.cup-live-clocks b {
+  font-variant-numeric: tabular-nums;
+}
+.cup-live-clocks .running b {
+  color: #c1eb96;
+}
+.cup-live-board {
+  width: min(100%, 58dvh);
+  display: grid;
+  grid-template-columns: repeat(var(--files), 1fr);
+  justify-self: center;
+}
+.cup-live-board > div {
+  aspect-ratio: 1;
+  position: relative;
+}
+.cup-live-board .light {
+  background: #afcfdb;
+  color: #325471;
+}
+.cup-live-board .dark {
+  background: #315c80;
+  color: #daecf9;
+}
+.cup-live-board .last {
+  box-shadow: inset 0 0 0 100px #e5c64355;
+}
+.cup-live-board img {
+  position: absolute;
+  inset: 4%;
+  width: 92%;
+  height: 92%;
+  object-fit: contain;
+}
+.cup-live-board .phased {
+  opacity: 0.55;
+}
+.cup-live-board img + img {
+  width: 56%;
+  height: 56%;
+}
+.cup-live-board small {
+  position: absolute;
+  top: 1px;
+  left: 2px;
+  font-size: 0.6rem;
+}
+.cup-live-board .file {
+  inset: auto 2px 0 auto;
+}
+.cup-tower {
+  position: absolute;
+  inset: 0;
+  text-align: center;
+  color: #f4b760;
+}
+
+.cup-live-board .locked {
+  outline: 2px solid #db9cd2;
+  outline-offset: -2px;
+}
+.cup-watch-stands {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.85rem;
 }
